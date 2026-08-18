@@ -1,0 +1,212 @@
+// Skema mengikuti PRD §9. SQLite untuk MVP single-user.
+// Migrasi ke Postgres: ganti provider + `prisma db push` (tipe sudah kompatibel).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Universe aset statis (~250-450 ticker, lihat src/lib/universe.ts)
+model Asset {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  name      String
+  /// 'us_stock' | 'idx_stock' | 'crypto' | 'gold'
+  assetType String   @map("asset_type")
+  exchange  String?
+  currency  String
+  /// simbol di provider (mis. 'BBCA.JK' di Yahoo, 'bitcoin' di CoinGecko)
+  providerSymbol String? @map("provider_symbol")
+  sector    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  marketData      MarketData[]
+  fundamentalData FundamentalData[]
+  news            News[]
+  scores          AnalysisScore[]
+  watchlistItems  WatchlistItem[]
+  alerts          Alert[]
+  alertEvents     AlertEvent[]
+
+  @@index([assetType])
+  @@map("assets")
+}
+
+/// Satu baris = satu bar OHLC (harian) atau snapshot harga terakhir.
+model MarketData {
+  id      String @id @default(cuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  price  Float?
+  open   Float?
+  high   Float?
+  low    Float?
+  close  Float?
+  volume Float?
+
+  source    String
+  /// 'realtime' | 'delayed_15m' | 'delayed_20m' | 'eod'
+  freshness String
+  fetchedAt DateTime @map("fetched_at")
+  timestamp DateTime
+
+  @@unique([assetId, timestamp])
+  @@index([assetId, timestamp])
+  @@map("market_data")
+}
+
+model FundamentalData {
+  id      String @id @default(cuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  /// 'roe' | 'per' | 'pbv' | 'eps_growth' | 'net_margin' | ... (lihat lib/metrics.ts)
+  metric     String
+  value      Float?
+  period     String?
+  source     String
+  reportedAt DateTime? @map("reported_at")
+  fetchedAt  DateTime  @default(now()) @map("fetched_at")
+
+  @@unique([assetId, metric, period])
+  @@index([assetId, metric])
+  @@map("fundamental_data")
+}
+
+model News {
+  id      String @id @default(cuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  title      String
+  source     String
+  /// 'official' | 'media' | 'social_unverified'
+  sourceType String  @map("source_type")
+  url        String?
+  summary    String?
+  /// 'positive' | 'neutral' | 'negative' (rule-based, lihat lib/scoring/sentiment.ts)
+  sentiment  String?
+
+  publishedAt DateTime @map("published_at")
+  fetchedAt   DateTime @map("fetched_at")
+
+  @@unique([assetId, url])
+  @@index([assetId, publishedAt])
+  @@map("news")
+}
+
+model AnalysisScore {
+  id      String @id @default(cuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  investmentMode String @map("investment_mode")
+
+  fundamentalScore Float? @map("fundamental_score")
+  technicalScore   Float? @map("technical_score")
+  valuationScore   Float? @map("valuation_score")
+  sentimentScore   Float? @map("sentiment_score")
+  riskScore        Float? @map("risk_score")
+  overallScore     Float  @map("overall_score")
+  /// 0-1, turun otomatis kalau data tidak lengkap (PRD §6.3)
+  confidence       Float
+
+  /// breakdown deterministik: input mentah tiap scorer + alasan
+  breakdownJson String? @map("breakdown_json")
+  /// output Claude: reasoning, supporting/contradicting, bull/base/bear
+  reasoningJson String? @map("reasoning_json")
+  reasoningAt   DateTime? @map("reasoning_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([assetId, investmentMode, createdAt])
+  @@map("analysis_scores")
+}
+
+model WatchlistItem {
+  id      String @id @default(cuid())
+  assetId String @unique @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  notes   String?
+  addedAt DateTime @default(now()) @map("added_at")
+
+  @@map("watchlist_items")
+}
+
+model Alert {
+  id      String @id @default(cuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  /// 'price' | 'score_change' | 'news' | 'fundamental_change'
+  alertType     String   @map("alert_type")
+  conditionJson String   @map("condition_json")
+  active        Boolean  @default(true)
+  lastTriggeredAt DateTime? @map("last_triggered_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  events AlertEvent[]
+
+  @@map("alerts")
+}
+
+/// Riwayat alert yang sudah terpicu + penjelasan AI (PRD §10 /api/alerts/feed)
+model AlertEvent {
+  id      String  @id @default(cuid())
+  alertId String? @map("alert_id")
+  alert   Alert?  @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  assetId String  @map("asset_id")
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  eventType   String  @map("event_type")
+  title       String
+  detail      String
+  /// penjelasan Claude tentang KENAPA berubah; null kalau LLM tidak aktif
+  explanation String?
+  severity    String  @default("info")
+  readAt      DateTime? @map("read_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("alert_events")
+}
+
+model SavedScreener {
+  id             String   @id @default(cuid())
+  name           String
+  filtersJson    String   @map("filters_json")
+  investmentMode String?  @map("investment_mode")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("saved_screeners")
+}
+
+/// Pengganti tabel USERS multi-user: satu baris key-value untuk setting single-user.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+/// Catatan tiap kali job data berjalan — dipakai UI untuk badge "terakhir diperbarui".
+model JobRun {
+  id         String    @id @default(cuid())
+  job        String
+  status     String
+  startedAt  DateTime  @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  ok         Int       @default(0)
+  failed     Int       @default(0)
+  message    String?
+
+  @@index([job, startedAt])
+  @@map("job_runs")
+}

@@ -1,0 +1,49 @@
+{
+  "name": "investment-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Investment Intelligence Assistant — personal decision-support tool untuk saham AS, saham IDX, kripto, dan emas.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "seed:universe": "tsx src/jobs/seedUniverse.ts",
+    "job:market": "tsx src/jobs/refreshMarketData.ts",
+    "job:fundamentals": "tsx src/jobs/refreshFundamentals.ts",
+    "job:news": "tsx src/jobs/refreshNews.ts",
+    "job:score": "tsx src/jobs/rescoreUniverse.ts",
+    "job:watchlist": "tsx src/jobs/detectWatchlistChanges.ts",
+    "job:all": "npm run job:market && npm run job:fundamentals && npm run job:news && npm run job:score",
+    "setup": "prisma db push && npm run seed:universe && npm run job:market && npm run job:score",
+    "cron": "tsx src/jobs/scheduler.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@prisma/client": "^6.16.2",
+    "clsx": "^2.1.1",
+    "gray-matter": "^4.0.3",
+    "lightweight-charts": "^5.0.9",
+    "lucide-react": "^0.544.0",
+    "next": "^15.5.4",
+    "node-cron": "^4.2.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "zod": "^4.1.11",
+    "dotenv": "^17.2.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "prisma": "^6.16.2",
+    "tailwindcss": "^4.1.13",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

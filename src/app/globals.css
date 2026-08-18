@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/*
+ * Design system: dark-first, dense dashboard.
+ * Aturan yang dipegang di seluruh aplikasi:
+ *   - angka finansial memakai tabular-nums supaya kolom tidak bergeser
+ *   - warna tidak pernah jadi satu-satunya pembawa makna (selalu ada teks/ikon)
+ *   - focus ring selalu terlihat, tidak pernah dihapus
+ */
+
+@theme {
+  --color-bg: #020617;
+  --color-surface: #0e1223;
+  --color-surface-2: #151a2e;
+  --color-muted: #1a1e2f;
+
+  --color-fg: #f8fafc;
+  --color-fg-muted: #94a3b8;
+  --color-fg-subtle: #64748b;
+
+  --color-line: #26304a;
+  --color-line-strong: #334155;
+
+  --color-accent: #22c55e;
+  --color-accent-fg: #052e16;
+  --color-up: #22c55e;
+  --color-down: #f87171;
+  --color-warn: #fbbf24;
+  --color-info: #60a5fa;
+  --color-danger: #ef4444;
+
+  --font-sans: "Fira Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Fira Code", ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+
+  --radius-card: 0.625rem;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+/* Semua angka rata kolom. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-subtle);
+}
+
+/* Tabel lebar harus menggulir di dalam wadahnya, bukan menggeser halaman. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@utility card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+}
