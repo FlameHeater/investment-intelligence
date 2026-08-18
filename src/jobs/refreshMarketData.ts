@@ -42,53 +42,85 @@ function wanted(assetType: string): boolean {
  * Menyimpan bar tanpa duplikasi. Timestamp dinormalkan ke tengah malam UTC
  * supaya bar harian dari dua kali refresh di hari yang sama menimpa, bukan
  * menumpuk — kalau tidak, indikator akan menghitung hari yang sama berkali-kali.
+ *
+ * Strategi penulisan: SATU query untuk membaca timestamp yang sudah ada, SATU
+ * createMany untuk bar baru, lalu SATU upsert untuk bar terakhir.
+ *
+ * Versi pertama fungsi ini melakukan upsert per bar. Di SQLite lokal itu tidak
+ * terasa, tapi begitu database pindah ke Postgres terkelola, setiap upsert
+ * menjadi satu perjalanan jaringan — laju turun ke sekitar 1 bar/detik, yang
+ * berarti 12 jam untuk mengisi universe. Membaca dulu lalu menulis massal
+ * memangkasnya menjadi hitungan menit.
+ *
+ * Bar historis yang sudah tutup tidak pernah berubah, jadi melewatkan yang sudah
+ * ada aman. Hanya bar TERAKHIR yang di-upsert, karena harga hari berjalan
+ * memang masih bergerak.
  */
+const INSERT_CHUNK = 500;
+
 async function saveBars(
   assetId: string,
   bars: Bar[],
   source: string,
   freshness: string,
 ): Promise<number> {
+  if (bars.length === 0) return 0;
   const fetchedAt = new Date();
-  let saved = 0;
 
-  for (const bar of bars) {
+  const normalized = bars.map((bar) => {
     const day = new Date(bar.timestamp);
     day.setUTCHours(0, 0, 0, 0);
+    return {
+      assetId,
+      timestamp: day,
+      price: bar.close,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume,
+      source,
+      freshness,
+      fetchedAt,
+    };
+  });
 
+  const existing = await prisma.marketData.findMany({
+    where: { assetId },
+    select: { timestamp: true },
+  });
+  const known = new Set(existing.map((r) => r.timestamp.getTime()));
+
+  // Bar terakhir selalu ditulis ulang lewat upsert di bawah, jadi dikeluarkan
+  // dari sisipan massal supaya tidak bentrok dengan unique constraint.
+  const latest = normalized.at(-1)!;
+  const fresh = normalized
+    .slice(0, -1)
+    .filter((row) => !known.has(row.timestamp.getTime()));
+
+  let saved = 0;
+  for (let i = 0; i < fresh.length; i += INSERT_CHUNK) {
+    const chunk = fresh.slice(i, i + INSERT_CHUNK);
     try {
-      await prisma.marketData.upsert({
-        where: { assetId_timestamp: { assetId, timestamp: day } },
-        create: {
-          assetId,
-          timestamp: day,
-          price: bar.close,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-          volume: bar.volume,
-          source,
-          freshness,
-          fetchedAt,
-        },
-        update: {
-          price: bar.close,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-          volume: bar.volume,
-          source,
-          freshness,
-          fetchedAt,
-        },
-      });
-      saved++;
+      const result = await prisma.marketData.createMany({ data: chunk });
+      saved += result.count;
     } catch {
-      // Satu bar gagal tidak boleh menggagalkan seluruh ticker.
+      // Satu potongan gagal tidak boleh menggagalkan seluruh ticker.
     }
   }
+
+  try {
+    const { assetId: _a, timestamp: _t, ...updatable } = latest;
+    await prisma.marketData.upsert({
+      where: { assetId_timestamp: { assetId, timestamp: latest.timestamp } },
+      create: latest,
+      update: updatable,
+    });
+    saved++;
+  } catch {
+    // idem
+  }
+
   return saved;
 }
 
