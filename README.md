@@ -310,6 +310,8 @@ Pola yang berhasil: **aplikasi di Vercel, job data di tempat lain.** Pilihannya,
 
 Vercel Cron di `vercel.json` tetap berguna untuk dua job ringan yang murni CPU dan tidak memanggil provider eksternal: `/api/cron/rescore` (hitung ulang skor) dan `/api/cron/watchlist` (deteksi perubahan). Keduanya dilindungi `CRON_SECRET`.
 
+Jadwalnya dipasang **sekali sehari** karena paket Hobby Vercel menolak deployment yang punya cron lebih sering dari itu. Ini bukan masalah dalam praktiknya: workflow GitHub Actions sudah menjalankan scoring dan deteksi watchlist setiap selesai menarik data, sehingga cron Vercel berperan sebagai jaring pengaman, bukan jalur utama.
+
 ---
 
 ## Peta jalan

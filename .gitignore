@@ -14,3 +14,7 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 dev-server.cmd
 .claude/
+
+.vercel
+.env*
+!.env.example
