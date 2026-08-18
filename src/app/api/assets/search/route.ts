@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { caseInsensitive } from "@/lib/dbCompat";
 
 /** GET /api/assets/search?q= → pencarian ticker/nama di universe (PRD §10). */
 export async function GET(request: Request) {
@@ -11,7 +12,10 @@ export async function GET(request: Request) {
 
   const results = await prisma.asset.findMany({
     where: {
-      OR: [{ ticker: { contains: q.toUpperCase() } }, { name: { contains: q } }],
+      OR: [
+        { ticker: { contains: q.toUpperCase() } },
+        { name: { contains: q, ...caseInsensitive() } },
+      ],
     },
     take: 15,
     orderBy: { ticker: "asc" },

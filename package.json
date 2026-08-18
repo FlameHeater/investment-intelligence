@@ -5,11 +5,11 @@
   "description": "Investment Intelligence Assistant — personal decision-support tool untuk saham AS, saham IDX, kripto, dan emas.",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/prepare-schema.mjs && prisma generate && prisma db push --skip-generate && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "db:push": "prisma db push",
+    "db:push": "node scripts/prepare-schema.mjs && prisma db push",
     "db:studio": "prisma studio",
     "seed:universe": "tsx src/jobs/seedUniverse.ts",
     "job:market": "tsx src/jobs/refreshMarketData.ts",
@@ -18,8 +18,9 @@
     "job:score": "tsx src/jobs/rescoreUniverse.ts",
     "job:watchlist": "tsx src/jobs/detectWatchlistChanges.ts",
     "job:all": "npm run job:market && npm run job:fundamentals && npm run job:news && npm run job:score",
-    "setup": "prisma db push && npm run seed:universe && npm run job:market && npm run job:score",
-    "cron": "tsx src/jobs/scheduler.ts"
+    "setup": "npm run db:push && npm run seed:universe && npm run job:market && npm run job:score",
+    "cron": "tsx src/jobs/scheduler.ts",
+    "prepare:schema": "node scripts/prepare-schema.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",

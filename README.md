@@ -256,13 +256,59 @@ Scheduler menyesuaikan jam bursa IDX dan AS dalam zona waktu Asia/Jakarta.
 
 ### Vercel
 
-Deploy aplikasinya bisa, tapi ada catatan penting: **job pengambilan data tidak cocok untuk fungsi serverless.** Menarik ~270 aset dengan jeda rate limit butuh belasan menit, jauh melewati batas eksekusi Vercel.
+**SQLite tidak bisa dipakai di Vercel.** Filesystem fungsi serverless bersifat read-only dan hilang setiap invokasi, jadi database harus berupa layanan terpisah. Proyek ini sudah menyiapkan jalurnya: `scripts/prepare-schema.mjs` berjalan sebelum `prisma generate` dan menukar `provider` di skema secara otomatis mengikuti bentuk `DATABASE_URL` Anda. Tidak ada berkas yang perlu diedit manual.
 
-Pola yang berhasil:
+Langkahnya:
 
-1. Deploy aplikasi ke Vercel dengan database Postgres terkelola (ubah `provider` di `prisma/schema.prisma` menjadi `postgresql`).
-2. Jalankan job data dari mesin lain — VPS kecil, Raspberry Pi, atau GitHub Actions — yang menulis ke database yang sama.
-3. Pakai Vercel Cron hanya untuk job ringan lewat `/api/cron/rescore` dan `/api/cron/watchlist`, dilindungi `CRON_SECRET`.
+1. **Siapkan Postgres.** Tier gratis Neon atau Supabase sudah lebih dari cukup untuk single-user. Salin connection string-nya (diawali `postgresql://`).
+
+2. **Login dan tautkan proyek:**
+
+```bash
+npx vercel login
+```
+
+```bash
+npx vercel link
+```
+
+3. **Isi environment variable** di Vercel (Settings → Environment Variables), minimal:
+
+   - `DATABASE_URL` — connection string Postgres tadi
+   - `APP_PASSWORD`
+   - `SESSION_SECRET`
+   - `CRON_SECRET` — string acak, untuk melindungi endpoint cron
+   - opsional: `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `MARKETAUX_API_KEY`, `COINGECKO_API_KEY`
+
+4. **Deploy:**
+
+```bash
+npx vercel --prod
+```
+
+Skema database dibuat otomatis saat build (`prisma db push` ada di dalam `npm run build`).
+
+5. **Isi datanya.** Setelah database kosong terbentuk, jalankan job dari mesin lokal Anda dengan `DATABASE_URL` yang menunjuk ke Postgres yang sama:
+
+```bash
+DATABASE_URL="postgresql://..." npm run seed:universe
+```
+
+```bash
+DATABASE_URL="postgresql://..." npm run job:all
+```
+
+### Kenapa job data tidak dijalankan di Vercel
+
+Menarik ~270 aset dengan jeda rate limit butuh 15–25 menit, jauh melewati batas eksekusi fungsi Vercel (10–60 detik tergantung paket). Memaksakannya akan menghasilkan data yang selalu setengah terisi.
+
+Pola yang berhasil: **aplikasi di Vercel, job data di tempat lain.** Pilihannya, dari yang paling sederhana:
+
+- **Komputer Anda sendiri** — jalankan `npm run cron` dengan `DATABASE_URL` yang menunjuk ke Postgres produksi. Cocok kalau komputer memang menyala saat jam bursa.
+- **GitHub Actions terjadwal** — gratis, tidak butuh server, dan `DATABASE_URL` disimpan sebagai repository secret.
+- **VPS kecil atau Raspberry Pi** — paling andal kalau ingin benar-benar berjalan terus.
+
+Vercel Cron di `vercel.json` tetap berguna untuk dua job ringan yang murni CPU dan tidak memanggil provider eksternal: `/api/cron/rescore` (hitung ulang skor) dan `/api/cron/watchlist` (deteksi perubahan). Keduanya dilindungi `CRON_SECRET`.
 
 ---
 

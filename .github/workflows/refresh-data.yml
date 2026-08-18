@@ -1,0 +1,76 @@
+name: Refresh data
+
+# Job pengambil data TIDAK bisa jalan di Vercel: menarik ~270 aset dengan jeda
+# rate limit butuh 15-25 menit, jauh melewati batas eksekusi fungsi serverless.
+# Runner GitHub Actions punya batas 6 jam, jadi lebih dari cukup.
+#
+# Prasyarat: buat repository secret bernama DATABASE_URL yang menunjuk ke
+# Postgres produksi yang sama dengan yang dipakai aplikasi di Vercel.
+# Secret opsional: FINNHUB_API_KEY, MARKETAUX_API_KEY, COINGECKO_API_KEY,
+# ANTHROPIC_API_KEY.
+
+on:
+  schedule:
+    # 06:30 WIB — setelah bursa AS tutup, sebelum bursa IDX buka.
+    - cron: "30 23 * * *"
+    # 17:30 WIB — setelah bursa IDX tutup.
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Isi ulang daftar aset (universe) sebelum menarik data"
+        type: boolean
+        default: false
+
+concurrency:
+  # Dua job yang menulis ke database yang sama secara bersamaan bisa saling
+  # menimpa. Antrikan, jangan batalkan yang sedang berjalan.
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
+      COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Pasang dependensi
+        run: npm ci
+
+      - name: Siapkan Prisma client
+        run: |
+          node scripts/prepare-schema.mjs
+          npx prisma generate
+
+      - name: Isi universe
+        if: inputs.seed
+        run: npm run seed:universe
+
+      - name: Perbarui harga
+        run: npm run job:market
+
+      - name: Perbarui fundamental
+        run: npm run job:fundamentals
+
+      - name: Perbarui berita
+        run: npm run job:news
+
+      - name: Hitung ulang skor
+        run: npm run job:score
+
+      - name: Deteksi perubahan watchlist
+        run: npm run job:watchlist

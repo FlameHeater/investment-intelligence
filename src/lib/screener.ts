@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "./db";
+import { caseInsensitive } from "./dbCompat";
 import { buildSnapshot, type AssetRow, type AssetSnapshot } from "./assetService";
 import { METRIC_BY_KEY } from "./metrics";
 import type { AssetType, InvestmentMode } from "./types";
@@ -139,7 +140,7 @@ export async function runScreener(
         ? {
             OR: [
               { ticker: { contains: query.search.toUpperCase() } },
-              { name: { contains: query.search } },
+              { name: { contains: query.search, ...caseInsensitive() } },
             ],
           }
         : {}),
