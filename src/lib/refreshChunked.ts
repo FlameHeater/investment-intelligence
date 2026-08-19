@@ -64,6 +64,14 @@ export interface RefreshState {
   log: { phase: Phase; message: string }[];
   error: string | null;
   totals: { ok: number; failed: number };
+  /**
+   * Penghitung untuk FASE yang sedang berjalan, di-reset saat berganti fase.
+   *
+   * Harus ikut disimpan, bukan variabel lokal: tiap potongan adalah invokasi
+   * fungsi yang berbeda, jadi variabel lokal selalu mulai dari nol dan angka
+   * yang dilaporkan di akhir fase hanya mencerminkan potongan terakhir.
+   */
+  phaseCount: number;
 }
 
 const IDLE: RefreshState = {
@@ -78,6 +86,7 @@ const IDLE: RefreshState = {
   log: [],
   error: null,
   totals: { ok: 0, failed: 0 },
+  phaseCount: 0,
 };
 
 export async function readState(): Promise<RefreshState> {
@@ -268,6 +277,7 @@ async function runMarketSlice(state: RefreshState, deadline: number): Promise<Re
     ...state,
     phase: finishedPhase ? "fundamentals" : "market",
     cursor: finishedPhase ? 0 : cursor,
+    phaseCount: 0,
     totals: { ok, failed },
     progress: { done: cursor, total: tasks.length, label },
     log: finishedPhase
@@ -282,6 +292,7 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
       ...state,
       phase: "news",
       cursor: 0,
+      phaseCount: 0,
       progress: null,
       log: [
         ...state.log,
@@ -300,7 +311,7 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
   });
 
   let cursor = state.cursor;
-  let processed = 0;
+  let processed = state.phaseCount;
   const period = `TTM-${new Date().toISOString().slice(0, 7)}`;
   const now = new Date();
   let label = "";
@@ -337,11 +348,15 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
     ...state,
     phase: finishedPhase ? "news" : "fundamentals",
     cursor: finishedPhase ? 0 : cursor,
+    phaseCount: finishedPhase ? 0 : processed,
     progress: { done: cursor, total: assets.length, label },
     log: finishedPhase
       ? [
           ...state.log,
-          { phase: "fundamentals", message: `${processed} saham AS punya fundamental terbaru.` },
+          {
+            phase: "fundamentals",
+            message: `${processed} dari ${assets.length} saham AS punya fundamental terbaru.`,
+          },
         ]
       : state.log,
   });
@@ -353,6 +368,7 @@ async function runNewsSlice(state: RefreshState, deadline: number): Promise<Refr
       ...state,
       phase: "score",
       cursor: 0,
+      phaseCount: 0,
       progress: null,
       log: [
         ...state.log,
@@ -370,7 +386,7 @@ async function runNewsSlice(state: RefreshState, deadline: number): Promise<Refr
     : [];
 
   let cursor = state.cursor;
-  let items = 0;
+  let items = state.phaseCount;
   let label = "";
 
   while (cursor < assets.length && Date.now() < deadline) {
@@ -406,6 +422,7 @@ async function runNewsSlice(state: RefreshState, deadline: number): Promise<Refr
     ...state,
     phase: finishedPhase ? "score" : "news",
     cursor: finishedPhase ? 0 : cursor,
+    phaseCount: finishedPhase ? 0 : items,
     progress: { done: cursor, total: assets.length, label },
     log: finishedPhase
       ? [...state.log, { phase: "news", message: `${items} artikel tersimpan/diperbarui.` }]
