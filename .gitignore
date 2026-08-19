@@ -18,3 +18,7 @@ dev-server.cmd
 .vercel
 .env*
 !.env.example
+
+# berkas uji sementara
+*.mjs
+!scripts/*.mjs
