@@ -3,9 +3,26 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { RefreshCw, Loader2, Check, AlertTriangle, X, RotateCcw } from "lucide-react";
+import {
+  RefreshCw,
+  Loader2,
+  Check,
+  AlertTriangle,
+  X,
+  RotateCcw,
+  CloudUpload,
+  ExternalLink,
+} from "lucide-react";
 
 type Phase = "market" | "fundamentals" | "news" | "score" | "done";
+
+interface DispatchInfo {
+  available: boolean;
+  actionsUrl: string | null;
+  ok?: boolean;
+  message?: string;
+  url?: string | null;
+}
 
 interface State {
   status: "idle" | "running" | "done" | "error";
@@ -42,6 +59,8 @@ export function RefreshDataButton() {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dispatch, setDispatch] = useState<DispatchInfo | null>(null);
+  const [dispatchNote, setDispatchNote] = useState<DispatchInfo | null>(null);
   const [, startTransition] = useTransition();
 
   // Loop dihentikan lewat ref supaya unmount benar-benar menghentikannya.
@@ -61,8 +80,9 @@ export function RefreshDataButton() {
     void (async () => {
       try {
         const res = await fetch("/api/jobs/refresh");
-        const data = (await res.json()) as { state: State };
+        const data = (await res.json()) as { state: State; dispatch: DispatchInfo };
         setState(data.state);
+        setDispatch(data.dispatch);
       } catch {
         // Status gagal dimuat bukan alasan menyembunyikan tombolnya.
       }
@@ -117,6 +137,25 @@ export function RefreshDataButton() {
     await drive(state);
   }
 
+  async function runOnGithub() {
+    setBusy(true);
+    setDispatchNote(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/jobs/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dispatch" }),
+      });
+      const data = (await res.json()) as { dispatch: DispatchInfo };
+      setDispatchNote(data.dispatch);
+    } catch {
+      setError("Tidak bisa menghubungi server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancel() {
     activeRef.current = false;
     setBusy(false);
@@ -165,6 +204,18 @@ export function RefreshDataButton() {
           </button>
         )}
 
+        {dispatch?.available && !running && (
+          <button
+            type="button"
+            onClick={runOnGithub}
+            title="Menjalankan seluruh penarikan data di GitHub Actions. Halaman boleh ditutup."
+            className="flex h-10 cursor-pointer items-center gap-1.5 rounded border border-line px-3 text-xs text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
+          >
+            <CloudUpload size={13} aria-hidden="true" />
+            Jalankan di GitHub
+          </button>
+        )}
+
         {state && state.log.length > 0 && !running && (
           <button
             type="button"
@@ -184,6 +235,42 @@ export function RefreshDataButton() {
         >
           <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
           {error}
+        </p>
+      )}
+
+      {dispatchNote && (
+        <p
+          role="status"
+          aria-live="polite"
+          className={clsx(
+            "mt-2 flex max-w-xl gap-2 rounded border px-3 py-2 text-xs",
+            dispatchNote.ok
+              ? "border-accent/40 bg-accent/10 text-accent"
+              : "border-warn/40 bg-warn/10 text-warn",
+          )}
+        >
+          {dispatchNote.ok ? (
+            <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+          )}
+          <span>
+            {dispatchNote.message}
+            {(dispatchNote.url ?? dispatchNote.actionsUrl) && (
+              <>
+                {" "}
+                <a
+                  href={dispatchNote.url ?? dispatchNote.actionsUrl ?? "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 underline"
+                >
+                  Lihat di GitHub
+                  <ExternalLink size={10} aria-hidden="true" />
+                </a>
+              </>
+            )}
+          </span>
         </p>
       )}
 

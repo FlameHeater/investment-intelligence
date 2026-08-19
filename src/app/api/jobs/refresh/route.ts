@@ -6,6 +6,7 @@ import {
   resetRefresh,
   startRefresh,
 } from "@/lib/refreshChunked";
+import { dispatchConfig, dispatchWorkflow } from "@/lib/refreshDispatch";
 import type { AssetScope } from "@/lib/refreshJobs";
 
 /**
@@ -21,12 +22,16 @@ const VALID_SCOPES: AssetScope[] = ["us", "idx", "crypto", "gold"];
 
 export async function GET() {
   const state = await readState();
-  return NextResponse.json({ state, stalled: isStalled(state) });
+  return NextResponse.json({
+    state,
+    stalled: isStalled(state),
+    dispatch: dispatchConfig(),
+  });
 }
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
-    action?: "start" | "advance" | "reset";
+    action?: "start" | "advance" | "reset" | "dispatch";
     only?: string[];
   };
 
@@ -38,6 +43,16 @@ export async function POST(request: Request) {
 
   if (action === "advance") {
     return NextResponse.json({ state: await advanceRefresh() });
+  }
+
+  // Jalur kedua: serahkan seluruh pekerjaan ke GitHub Actions supaya halaman
+  // tidak perlu tetap terbuka.
+  if (action === "dispatch") {
+    const result = await dispatchWorkflow();
+    return NextResponse.json(
+      { dispatch: { ...dispatchConfig(), ...result }, state: await readState() },
+      { status: result.ok ? 202 : 502 },
+    );
   }
 
   const only = body.only?.filter((s): s is AssetScope => VALID_SCOPES.includes(s as AssetScope));
