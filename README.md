@@ -318,6 +318,28 @@ DATABASE_URL="postgresql://..." npm run seed:universe
 DATABASE_URL="postgresql://..." npm run job:all
 ```
 
+### Deploy lewat `git push`, bukan `vercel --prod`
+
+Repo ini tersambung ke Vercel, jadi setiap push ke `main` otomatis memicu deployment produksi. **Pakai jalur itu.**
+
+Alasannya bukan selera. Vercel membuat tiga alias untuk proyek ini:
+
+| Alias | Diperbarui oleh |
+|---|---|
+| `<proyek>.vercel.app` | deployment produksi mana pun |
+| `<proyek>-<team>.vercel.app` | deployment produksi mana pun |
+| `<proyek>-**git-main**-<team>.vercel.app` | **hanya deployment yang dipicu git** |
+
+Alias `git-main` tidak ikut berpindah kalau Anda deploy lewat CLI. Akibatnya dua alias menunjuk kode baru sementara satu lagi menunjuk kode lama — dan kalau yang Anda buka kebetulan yang tertinggal, aplikasi tampak "belum ter-deploy" padahal build-nya sukses. Gejalanya membingungkan karena semua indikator di dashboard tampak hijau.
+
+Kalau terpaksa deploy lewat CLI, samakan aliasnya setelah itu:
+
+```bash
+npx vercel alias set <deployment-baru>.vercel.app <proyek>-git-main-<team>.vercel.app
+```
+
+---
+
 ### Kenapa job data tidak dijalankan di Vercel
 
 Menarik ~270 aset dengan jeda rate limit butuh 15–25 menit, jauh melewati batas eksekusi fungsi Vercel (10–60 detik tergantung paket). Memaksakannya akan menghasilkan data yang selalu setengah terisi.
