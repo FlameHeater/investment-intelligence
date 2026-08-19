@@ -1,35 +1,47 @@
 import { NextResponse } from "next/server";
 import {
-  getRefreshState,
-  refreshMode,
-  refreshModeExplanation,
+  advanceRefresh,
+  isStalled,
+  readState,
+  resetRefresh,
   startRefresh,
-} from "@/lib/refreshOrchestrator";
+} from "@/lib/refreshChunked";
 import type { AssetScope } from "@/lib/refreshJobs";
+
+/**
+ * Refresh dijalankan sebagai rangkaian potongan pendek, bukan satu proses
+ * panjang — lihat lib/refreshChunked.ts untuk alasannya. Browser memanggil
+ * endpoint ini berulang selama status masih `running`.
+ */
+
+// Batas atas eksekusi; anggaran per potongan di dalamnya jauh lebih kecil.
+export const maxDuration = 60;
 
 const VALID_SCOPES: AssetScope[] = ["us", "idx", "crypto", "gold"];
 
-/** GET → status refresh saat ini + mode yang berlaku di deployment ini. */
 export async function GET() {
-  return NextResponse.json({
-    mode: refreshMode(),
-    explanation: refreshModeExplanation(),
-    state: getRefreshState(),
-  });
+  const state = await readState();
+  return NextResponse.json({ state, stalled: isStalled(state) });
 }
 
-/** POST → mulai refresh. Body opsional: { only: ["us","crypto"] } */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { only?: string[] };
+  const body = (await request.json().catch(() => ({}))) as {
+    action?: "start" | "advance" | "reset";
+    only?: string[];
+  };
 
-  const only = body.only?.filter((s): s is AssetScope =>
-    VALID_SCOPES.includes(s as AssetScope),
-  );
+  const action = body.action ?? "start";
 
-  const result = await startRefresh(only?.length ? only : undefined);
+  if (action === "reset") {
+    return NextResponse.json({ state: await resetRefresh() });
+  }
 
-  return NextResponse.json(
-    { ...result, state: getRefreshState(), explanation: refreshModeExplanation() },
-    { status: result.started ? 202 : 409 },
-  );
+  if (action === "advance") {
+    return NextResponse.json({ state: await advanceRefresh() });
+  }
+
+  const only = body.only?.filter((s): s is AssetScope => VALID_SCOPES.includes(s as AssetScope));
+  const state = await startRefresh(only?.length ? only : undefined);
+
+  return NextResponse.json({ state }, { status: 202 });
 }

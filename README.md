@@ -105,8 +105,6 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |
 | `CRON_SECRET` | Tidak | Mengaktifkan endpoint `/api/cron/[job]` untuk Vercel Cron |
-| `GITHUB_DISPATCH_TOKEN` | Tidak | Membuat tombol "Perbarui data" berfungsi di deployment Vercel (lihat [Memperbarui data](#memperbarui-data)) |
-| `GITHUB_REPOSITORY` | Tidak | Pasangan token di atas, mis. `FlameHeater/investment-intelligence` |
 
 Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan menampilkan hasil kosong tanpa keterangan.
 
@@ -134,19 +132,21 @@ Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan men
 
 ## Memperbarui data
 
-Ada tombol **Perbarui data** di kanan atas dashboard. Ia menjalankan pipeline lengkap: harga → fundamental → berita → hitung ulang skor, dengan progres per tahap yang bisa dibuka.
+Ada tombol **Perbarui data** di kanan atas dashboard. Ia menjalankan pipeline lengkap — harga → fundamental → berita → hitung ulang skor — dengan progres per fase.
 
-Yang dilakukan tombol itu bergantung pada tempat aplikasi berjalan, dan UI menyatakannya secara terbuka alih-alih menampilkan tombol yang diam-diam tidak bekerja:
+Tombol ini bekerja **di mana saja**, termasuk di Vercel, tanpa token atau layanan tambahan.
 
-| Lingkungan | Perilaku |
-|---|---|
-| Lokal / VPS / Raspberry Pi | Dijalankan langsung oleh proses server. Progres tampil per tahap. Halaman boleh ditutup — job tetap jalan. |
-| Vercel + `GITHUB_DISPATCH_TOKEN` | Memicu workflow GitHub Actions yang menulis ke database yang sama, dan menampilkan tautan ke run-nya. |
-| Vercel tanpa token | Tombol nonaktif disertai penjelasan kenapa. |
+### Kenapa dipecah menjadi potongan
 
-Alasan pembedaan ini: menarik ~270 aset butuh 15-25 menit karena limiter provider gratis, sedangkan fungsi serverless Vercel dihentikan setelah beberapa puluh detik dan pekerjaan latar apa pun ikut mati begitu response dikirim. Menjalankannya di sana bukan lambat — melainkan tidak akan pernah selesai.
+Menarik ~270 aset butuh 15-25 menit karena limiter provider gratis. Satu request ke fungsi serverless tidak boleh berjalan selama itu, dan pekerjaan latar apa pun ikut mati begitu response dikirim — jadi menjalankannya sebagai satu proses panjang bukan sekadar lambat di Vercel, melainkan tidak akan pernah selesai.
 
-Untuk mengaktifkan jalur GitHub Actions: buat Personal Access Token dengan scope `workflow`, lalu isi `GITHUB_DISPATCH_TOKEN` dan `GITHUB_REPOSITORY` di environment variable Vercel. Workflow-nya juga butuh repository secret `DATABASE_URL` yang menunjuk ke database produksi.
+Karena itu tiap request mengerjakan sebanyak mungkin dalam anggaran 20 detik, menyimpan posisinya, lalu berhenti. Browser memanggil lagi untuk melanjutkan sampai tuntas.
+
+Posisinya disimpan di **database**, bukan di memori proses, karena tiap request di Vercel bisa mendarat di instance yang berbeda. Efek sampingnya berguna: kalau halaman tertutup di tengah jalan, tombol **Lanjutkan** meneruskan dari titik terakhir alih-alih mengulang dari nol. Refresh yang ditinggalkan lebih dari 5 menit dianggap terbengkalai sehingga tidak memblokir tombol selamanya.
+
+Konsekuensi yang perlu Anda tahu: halaman harus tetap terbuka selama proses berjalan, karena loop-nya ada di browser. Untuk refresh terjadwal tanpa penunggu, gunakan workflow GitHub Actions yang sudah disertakan (`.github/workflows/refresh-data.yml`) atau `npm run cron` di server yang menyala terus.
+
+---
 
 ---
 

@@ -53,7 +53,7 @@ const INSERT_CHUNK = 500;
  * Bar historis yang sudah tutup tidak berubah, jadi melewatkan yang sudah ada
  * aman; hanya bar terakhir yang perlu ditulis ulang.
  */
-async function saveBars(
+export async function saveBars(
   assetId: string,
   bars: Bar[],
   source: string,
@@ -294,7 +294,7 @@ export async function refreshFundamentals(options: RefreshOptions = {}): Promise
   };
 }
 
-async function saveNews(assetId: string, items: NewsItem[]): Promise<number> {
+export async function saveNews(assetId: string, items: NewsItem[]): Promise<number> {
   const fetchedAt = new Date();
   let saved = 0;
 
