@@ -318,25 +318,25 @@ DATABASE_URL="postgresql://..." npm run seed:universe
 DATABASE_URL="postgresql://..." npm run job:all
 ```
 
-### Deploy lewat `git push`, bukan `vercel --prod`
+### Deploy lewat `git push`
 
-Repo ini tersambung ke Vercel, jadi setiap push ke `main` otomatis memicu deployment produksi. **Pakai jalur itu.**
+Repo ini tersambung ke integrasi Git Vercel dengan `main` sebagai branch produksi, jadi setiap push otomatis memicu deployment produksi. Itu jalur yang seharusnya dipakai — bukan karena `vercel --prod` menghasilkan kode berbeda (tidak; CLI juga melampirkan SHA commit lokal), melainkan karena deploy lewat CLI membuat deployment KEDUA untuk commit yang sama.
 
-Alasannya bukan selera. Vercel membuat tiga alias untuk proyek ini:
+Akibatnya proyek punya beberapa deployment berisi kode identik, dan ketiga alias Vercel bisa menunjuk deployment yang berbeda-beda meski isinya sama:
 
 | Alias | Diperbarui oleh |
 |---|---|
-| `<proyek>.vercel.app` | deployment produksi mana pun |
-| `<proyek>-<team>.vercel.app` | deployment produksi mana pun |
-| `<proyek>-**git-main**-<team>.vercel.app` | **hanya deployment yang dipicu git** |
+| `<proyek>.vercel.app` | deployment produksi terbaru |
+| `<proyek>-<team>.vercel.app` | deployment produksi terbaru |
+| `<proyek>-git-main-<team>.vercel.app` | deployment yang dipicu git |
 
-Alias `git-main` tidak ikut berpindah kalau Anda deploy lewat CLI. Akibatnya dua alias menunjuk kode baru sementara satu lagi menunjuk kode lama — dan kalau yang Anda buka kebetulan yang tertinggal, aplikasi tampak "belum ter-deploy" padahal build-nya sukses. Gejalanya membingungkan karena semua indikator di dashboard tampak hijau.
-
-Kalau terpaksa deploy lewat CLI, samakan aliasnya setelah itu:
+Ini menyesatkan saat menelusuri masalah: nama deployment yang berbeda memberi kesan salah satunya basi, padahal keduanya membangun commit yang sama. Cara memeriksa yang benar adalah membandingkan SHA commit-nya, bukan nama deployment-nya:
 
 ```bash
-npx vercel alias set <deployment-baru>.vercel.app <proyek>-git-main-<team>.vercel.app
+npx vercel inspect <alias>
 ```
+
+Satu peringatan: **jangan menetapkan alias `git-main` secara manual** dengan `vercel alias set`. Sekali ditetapkan manual, alias itu lepas dari pengelolaan otomatis dan berhenti mengikuti push berikutnya — persis kebalikan dari yang biasanya diinginkan.
 
 ---
 
