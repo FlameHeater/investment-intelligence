@@ -197,11 +197,30 @@ export default async function AssetPage({ params }: { params: Promise<{ ticker: 
               }
             />
 
+            {/*
+              Dua sebab yang berbeda dan tidak boleh tertukar:
+              tidak ada metrik yang BERLAKU (kripto, emas) versus metriknya
+              berlaku tapi sumbernya sedang mati (saham). Sebelumnya kedua
+              saham jatuh ke cabang pertama dan halaman emiten IDX menampilkan
+              "Emas adalah komoditas tanpa laporan keuangan" — keliru, dan
+              justru jenis kekeliruan yang paling merusak di aplikasi yang
+              seluruh nilainya bertumpu pada kejujuran soal data.
+            */}
             {fundamentalMetrics.length === 0 ? (
-              <p className="rounded border border-line bg-surface-2 p-3 text-sm text-fg-muted">
+              <p
+                className={
+                  asset.assetType === "crypto" || asset.assetType === "gold"
+                    ? "rounded border border-line bg-surface-2 p-3 text-sm text-fg-muted"
+                    : "rounded border border-warn/40 bg-warn/10 p-3 text-sm text-warn"
+                }
+              >
                 {asset.assetType === "crypto"
                   ? "Kripto tidak punya laporan keuangan, jadi tidak ada metrik fundamental atau valuasi yang berlaku. Ini bukan data yang hilang — memang tidak ada."
-                  : "Emas adalah komoditas tanpa laporan keuangan. Penilaian untuk aset ini sepenuhnya bertumpu pada harga dan risiko."}
+                  : asset.assetType === "gold"
+                    ? "Emas adalah komoditas tanpa laporan keuangan. Penilaian untuk aset ini sepenuhnya bertumpu pada harga dan risiko."
+                    : asset.assetType === "idx_stock"
+                      ? "Metrik fundamental berlaku untuk emiten ini, tapi sumbernya sedang tidak aktif. Aktifkan ENABLE_PLUANG_SCRAPE lalu jalankan Perbarui data. Selama itu belum dilakukan, confidence skor ikut turun."
+                      : "Metrik fundamental berlaku untuk saham ini, tapi sumbernya sedang tidak aktif. Isi FINNHUB_API_KEY lalu jalankan Perbarui data."}
               </p>
             ) : snapshot.fundamentals.size === 0 ? (
               <p className="rounded border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
