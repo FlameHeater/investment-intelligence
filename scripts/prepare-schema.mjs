@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -16,6 +16,38 @@ import path from "node:path";
  */
 
 const SCHEMA_PATH = path.join(process.cwd(), "prisma", "schema.prisma");
+
+/**
+ * Skrip ini dijalankan dengan `node` biasa, yang TIDAK membaca .env — sedangkan
+ * Prisma CLI membacanya. Tanpa pemuatan manual di bawah, keduanya bisa melihat
+ * DATABASE_URL yang berbeda: skrip ini menyimpulkan "sqlite" karena tidak
+ * melihat apa-apa, lalu `prisma generate` membaca .env berisi URL Postgres dan
+ * menolak dengan "the URL must start with the protocol file:".
+ *
+ * Di Vercel dan GitHub Actions hal ini tidak terjadi karena variabelnya ada di
+ * environment proses, jadi bug-nya hanya muncul saat build lokal — tempat yang
+ * paling tidak terduga.
+ */
+function loadDotEnv() {
+  if (process.env.DATABASE_URL) return;
+
+  for (const name of [".env.local", ".env"]) {
+    const file = path.join(process.cwd(), name);
+    if (!existsSync(file)) continue;
+
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?DATABASE_URL\s*=\s*(.*)$/);
+      if (!match) continue;
+      const value = match[1].trim().replace(/^["']|["']$/g, "");
+      if (value) {
+        process.env.DATABASE_URL = value;
+        return;
+      }
+    }
+  }
+}
+
+loadDotEnv();
 
 const url = process.env.DATABASE_URL ?? "";
 const provider =

@@ -417,8 +417,11 @@ export default async function AssetPage({ params }: { params: Promise<{ ticker: 
 
             {news.length === 0 ? (
               <p className="rounded border border-dashed border-line-strong p-4 text-center text-sm text-fg-muted">
-                Belum ada berita tersimpan. Sumber berita butuh FINNHUB_API_KEY (saham AS) atau
-                MARKETAUX_API_KEY (aset lain).
+                {asset.assetType === "us_stock"
+                  ? "Belum ada berita tersimpan. Sumber berita saham AS butuh FINNHUB_API_KEY."
+                  : asset.assetType === "idx_stock"
+                    ? "Belum ada berita tersimpan. Jalankan Perbarui data — berita emiten IDX tidak butuh API key."
+                    : "Belum ada sumber berita untuk kelas aset ini."}
               </p>
             ) : (
               <ul className="space-y-3">

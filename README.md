@@ -101,7 +101,6 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `ANTHROPIC_API_KEY` | Tidak | Mengaktifkan AI Reasoning, AI Screener, dan penjelasan istilah |
 | `ANTHROPIC_MODEL` | Tidak | Default `claude-sonnet-5` |
 | `FINNHUB_API_KEY` | Tidak | Fundamental & berita saham AS (gratis, 60 calls/menit) |
-| `MARKETAUX_API_KEY` | Tidak | Berita aset non-AS (gratis, 100 request/hari) |
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |
 | `CRON_SECRET` | Tidak | Mengaktifkan endpoint `/api/cron/[job]` untuk Vercel Cron |
@@ -203,8 +202,8 @@ Hasilnya tetap memenuhi prinsip Explainable AI dari PRD asli — bahkan lebih ba
 | Kelas aset | Jumlah | Sumber harga | Fundamental | Berita |
 |---|---|---|---|---|
 | Saham AS | ~107 large/mid cap | Yahoo Finance chart | Finnhub (opsional) | Finnhub (opsional) |
-| Saham IDX | ~59 LQ45/blue chip | Yahoo Finance (`.JK`) | **Tidak tersedia** | Marketaux (opsional, watchlist saja) |
-| Kripto | 100 teratas by market cap | CoinGecko | Tidak berlaku | Marketaux (opsional) |
+| Saham IDX | ~59 LQ45/blue chip | Yahoo Finance (`.JK`) | **Tidak tersedia** | Google News RSS (tanpa API key) |
+| Kripto | 100 teratas by market cap | CoinGecko | Tidak berlaku | Belum ada sumber |
 | Emas | GLD + GC=F | Yahoo Finance | Tidak berlaku | — |
 
 **Soal saham IDX:** per Agustus 2026 tidak ada API resmi IDX yang gratis dan stabil untuk data fundamental. Yang tersedia gratis hanyalah harga lewat endpoint publik Yahoo Finance (tanpa SLA). Aplikasi ini menampilkan "tidak tersedia" untuk fundamental IDX alih-alih mengarang angka, dan confidence skornya turun sesuai. Berlangganan penyedia berbayar (mis. Sectors.app) adalah keputusan Phase 2, setelah terbukti fitur ini memang dipakai.
@@ -299,7 +298,7 @@ npx vercel link
    - `APP_PASSWORD`
    - `SESSION_SECRET`
    - `CRON_SECRET` — string acak, untuk melindungi endpoint cron
-   - opsional: `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `MARKETAUX_API_KEY`, `COINGECKO_API_KEY`
+   - opsional: `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `COINGECKO_API_KEY`
 
 4. **Deploy:**
 

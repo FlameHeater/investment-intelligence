@@ -12,7 +12,7 @@ import {
   fetchTopCoins,
 } from "./providers/coingecko";
 import { fetchCompanyNews, fetchMetrics, finnhubEnabled, FINNHUB_SOURCE } from "./providers/finnhub";
-import { fetchNewsForSymbols, marketauxEnabled } from "./providers/marketaux";
+import { fetchIdxNews } from "./providers/googleNewsId";
 import { runRescore } from "./jobRunners";
 import { invalidateUniverseCache } from "./universeSnapshot";
 
@@ -363,7 +363,24 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
 }
 
 async function runNewsSlice(state: RefreshState, deadline: number): Promise<RefreshState> {
-  if (!finnhubEnabled() && !marketauxEnabled()) {
+  // Dua sumber berbeda digabung jadi SATU daftar tugas berindeks, supaya
+  // kursornya tetap satu angka dan bisa dilanjutkan lintas potongan:
+  //   - saham AS lewat Finnhub (butuh key; dilewati kalau kosong)
+  //   - emiten IDX lewat Google News RSS (tanpa key, tanpa kuota)
+  const usAssets = finnhubEnabled()
+    ? await prisma.asset.findMany({ where: { assetType: "us_stock" }, orderBy: { ticker: "asc" } })
+    : [];
+  const idxAssets = await prisma.asset.findMany({
+    where: { assetType: "idx_stock" },
+    orderBy: { ticker: "asc" },
+  });
+
+  const tasks = [
+    ...usAssets.map((a) => ({ kind: "us" as const, asset: a })),
+    ...idxAssets.map((a) => ({ kind: "idx" as const, asset: a })),
+  ];
+
+  if (tasks.length === 0) {
     return writeState({
       ...state,
       phase: "score",
@@ -375,42 +392,32 @@ async function runNewsSlice(state: RefreshState, deadline: number): Promise<Refr
         {
           phase: "news",
           message:
-            "Dilewati — tidak ada sumber berita (FINNHUB_API_KEY dan MARKETAUX_API_KEY kosong), jadi dimensi sentimen tetap kosong.",
+            "Dilewati — tidak ada aset yang punya sumber berita. Saham AS butuh FINNHUB_API_KEY; emiten IDX tidak butuh key tapi universe-nya kosong.",
         },
       ],
     });
   }
 
-  const assets = finnhubEnabled()
-    ? await prisma.asset.findMany({ where: { assetType: "us_stock" }, orderBy: { ticker: "asc" } })
-    : [];
-
   let cursor = state.cursor;
   let items = state.phaseCount;
   let label = "";
 
-  while (cursor < assets.length && Date.now() < deadline) {
-    const asset = assets[cursor];
-    label = `Berita ${asset.ticker}`;
-    const news = await fetchCompanyNews(asset.providerSymbol ?? asset.ticker, 7);
-    if (news.length > 0) items += await saveNews(asset.id, news);
+  while (cursor < tasks.length && Date.now() < deadline) {
+    const task = tasks[cursor];
+    label = `Berita ${task.asset.ticker}`;
+
+    const news =
+      task.kind === "us"
+        ? await fetchCompanyNews(task.asset.providerSymbol ?? task.asset.ticker, 7)
+        : await fetchIdxNews(task.asset.ticker);
+
+    if (news.length > 0) items += await saveNews(task.asset.id, news);
     cursor++;
   }
 
-  const finishedPhase = cursor >= assets.length;
+  const finishedPhase = cursor >= tasks.length;
 
   if (finishedPhase) {
-    // Marketaux hanya 100 request/hari, jadi dipakai untuk watchlist saja —
-    // jumlahnya kecil sehingga muat dalam satu potongan.
-    if (marketauxEnabled()) {
-      const watchlist = await prisma.watchlistItem.findMany({ include: { asset: true } });
-      for (const item of watchlist.filter((w) => w.asset.assetType !== "us_stock")) {
-        if (Date.now() > deadline) break;
-        const found = await fetchNewsForSymbols([item.asset.ticker.replace("-USD", "")]);
-        if (found.length > 0) items += await saveNews(item.assetId, found);
-      }
-    }
-
     await prisma.news.deleteMany({
       where: { publishedAt: { lt: new Date(Date.now() - 90 * 86_400_000) } },
     });
@@ -423,9 +430,15 @@ async function runNewsSlice(state: RefreshState, deadline: number): Promise<Refr
     phase: finishedPhase ? "score" : "news",
     cursor: finishedPhase ? 0 : cursor,
     phaseCount: finishedPhase ? 0 : items,
-    progress: { done: cursor, total: assets.length, label },
+    progress: { done: cursor, total: tasks.length, label },
     log: finishedPhase
-      ? [...state.log, { phase: "news", message: `${items} artikel tersimpan/diperbarui.` }]
+      ? [
+          ...state.log,
+          {
+            phase: "news",
+            message: `${items} artikel tersimpan/diperbarui dari ${usAssets.length} saham AS dan ${idxAssets.length} emiten IDX.`,
+          },
+        ]
       : state.log,
   });
 }

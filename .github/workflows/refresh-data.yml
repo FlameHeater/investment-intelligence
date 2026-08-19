@@ -6,8 +6,8 @@ name: Refresh data
 #
 # Prasyarat: buat repository secret bernama DATABASE_URL yang menunjuk ke
 # Postgres produksi yang sama dengan yang dipakai aplikasi di Vercel.
-# Secret opsional: FINNHUB_API_KEY, MARKETAUX_API_KEY, COINGECKO_API_KEY,
-# ANTHROPIC_API_KEY.
+# Secret opsional: FINNHUB_API_KEY, COINGECKO_API_KEY, ANTHROPIC_API_KEY.
+# Berita emiten IDX tidak butuh secret apa pun.
 
 on:
   schedule:
@@ -36,7 +36,6 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-      MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
       COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 

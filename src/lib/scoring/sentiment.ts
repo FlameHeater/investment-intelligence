@@ -11,6 +11,11 @@ import { emptyScore, type ScoringContext } from "./shared";
  *
  * Keterbatasan yang diakui: hanya menangkap kata kunci Inggris & Indonesia yang
  * terdaftar, dan tidak memahami negasi ("gagal tumbuh"). Ini tercatat di notes.
+ *
+ * Aturan saat menambah kata: pencocokannya SUBSTRING, bukan per kata. Jadi kata
+ * pendek dilarang — istilah bursa "ARA" dan "ARB" terlihat menggoda untuk
+ * ditambahkan, tapi "ara" ikut cocok dengan "sementara" dan "arah", yang akan
+ * membuat berita netral terbaca positif tanpa jejak yang mudah dilacak.
  */
 
 const POSITIVE = [
@@ -19,6 +24,14 @@ const POSITIVE = [
   "dividend increase", "raises guidance", "approval", "partnership", "wins", "breakthrough",
   "naik", "melonjak", "untung", "laba naik", "rekor", "ekspansi", "kerja sama", "tumbuh",
   "positif", "menguat", "dividen naik",
+  // Kosakata pasar modal Indonesia. Ditambahkan setelah Google News RSS menjadi
+  // sumber utama berita IDX: dengan daftar awal yang tipis, hampir semua judul
+  // berbahasa Indonesia terbaca netral sehingga dimensi sentimen praktis mati
+  // untuk 59 emiten.
+  "melesat", "cuan", "rebound", "bangkit", "dilirik", "diborong", "borong",
+  "akumulasi", "top gainer", "prospek cerah", "rekomendasi beli", "layak beli",
+  "target harga naik", "arus masuk", "net buy", "pembelian asing", "raih",
+  "laba melesat", "kinerja membaik", "pangsa pasar naik",
 ];
 
 const NEGATIVE = [
@@ -27,6 +40,12 @@ const NEGATIVE = [
   "bankruptcy", "fraud", "delay", "warns", "warning", "decline", "falls", "halt", "suspended",
   "turun", "anjlok", "merugi", "rugi", "gugatan", "penyelidikan", "phk", "melemah", "negatif",
   "denda", "sanksi", "gagal", "dibekukan",
+  // idem — lihat catatan di daftar positif
+  "loyo", "lesu", "tertekan", "merosot", "jeblok", "longsor", "ambles",
+  "terkoreksi", "dilepas", "dibuang", "net sell", "penjualan asing", "arus keluar",
+  "suspensi", "disuspensi", "delisting", "gagal bayar", "pailit", "restrukturisasi utang",
+  "top loser", "susah gerak", "tekanan jual", "laba turun", "pendapatan turun",
+  "rekomendasi jual", "turun peringkat",
 ];
 
 /** Dipakai juga oleh job ingest berita untuk mengisi kolom `sentiment`. */

@@ -7,7 +7,7 @@ import {
   fetchTopCoins,
 } from "./providers/coingecko";
 import { fetchCompanyNews, fetchMetrics, finnhubEnabled, FINNHUB_SOURCE } from "./providers/finnhub";
-import { fetchNewsForSymbols, marketauxEnabled } from "./providers/marketaux";
+import { fetchIdxNews } from "./providers/googleNewsId";
 import { classifySentiment } from "./scoring/sentiment";
 import { invalidateUniverseCache } from "./universeSnapshot";
 import type { NewsItem } from "./providers/finnhub";
@@ -325,19 +325,11 @@ export async function saveNews(assetId: string, items: NewsItem[]): Promise<numb
 }
 
 export async function refreshNews(options: RefreshOptions = {}): Promise<JobOutcome> {
-  if (!finnhubEnabled() && !marketauxEnabled()) {
-    return {
-      ok: 0,
-      failed: 0,
-      message:
-        "FINNHUB_API_KEY dan MARKETAUX_API_KEY sama-sama kosong — tidak ada sumber berita, jadi dimensi sentimen akan tetap kosong.",
-    };
-  }
-
   let ok = 0;
   let failed = 0;
   let totalItems = 0;
 
+  // Saham AS lewat Finnhub; dilewati kalau keynya kosong.
   if (finnhubEnabled()) {
     const usAssets = await prisma.asset.findMany({
       where: { assetType: "us_stock" },
@@ -358,20 +350,25 @@ export async function refreshNews(options: RefreshOptions = {}): Promise<JobOutc
     }
   }
 
-  // Marketaux dibatasi 100 request/hari, jadi hanya dipakai untuk aset yang
-  // benar-benar dipantau — di situlah beritanya paling berguna.
-  if (marketauxEnabled()) {
-    const watchlist = await prisma.watchlistItem.findMany({ include: { asset: true } });
-    const nonUs = watchlist.filter((w) => w.asset.assetType !== "us_stock");
+  // Emiten IDX lewat Google News RSS. Tidak butuh API key, dan tidak ada kuota
+  // yang perlu dijaga — lihat providers/googleNewsId.ts untuk alasan pemilihan
+  // sumber ini beserta peringatannya.
+  const idxAssets = await prisma.asset.findMany({
+    where: { assetType: "idx_stock" },
+    orderBy: { ticker: "asc" },
+  });
 
-    for (const item of nonUs) {
-      const symbol = item.asset.ticker.replace("-USD", "");
-      const items = await fetchNewsForSymbols([symbol]);
-      if (items.length > 0) {
-        totalItems += await saveNews(item.assetId, items);
-        ok++;
-      }
+  let doneIdx = 0;
+  for (const asset of idxAssets) {
+    const items = await fetchIdxNews(asset.ticker);
+    if (items.length === 0) {
+      failed++;
+    } else {
+      totalItems += await saveNews(asset.id, items);
+      ok++;
     }
+    doneIdx++;
+    options.onProgress?.(doneIdx, idxAssets.length, `Berita ${asset.ticker}`);
   }
 
   // Berita lebih tua dari 90 hari tidak dipakai scorer mana pun.

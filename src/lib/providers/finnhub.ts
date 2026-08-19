@@ -1,4 +1,5 @@
 import { fetchJson, RateLimiter } from "./http";
+import { classifySource } from "./sourceType";
 import type { SourceType } from "../types";
 
 /**
@@ -112,43 +113,4 @@ export async function fetchCompanyNews(symbol: string, days = 7): Promise<NewsIt
     }));
 }
 
-/**
- * PRD §5 poin 7: Source Verification badge dengan ATURAN STATIS, bukan ML classifier.
- * Daftar ini sengaja dibuat eksplisit dan mudah diaudit — kalau sebuah sumber tidak
- * dikenali, defaultnya "media", bukan "official".
- */
-const OFFICIAL_PATTERNS = [
-  "sec.gov",
-  "sec filing",
-  "idx.co.id",
-  "company press release",
-  "businesswire",
-  "globenewswire",
-  "prnewswire",
-  "accesswire",
-  "federal reserve",
-  "bank indonesia",
-  "ojk",
-];
-
-const SOCIAL_PATTERNS = [
-  "reddit",
-  "twitter",
-  "x.com",
-  "stocktwits",
-  "seekingalpha",
-  "motley fool",
-  "fool.com",
-  "investorplace",
-  "zacks",
-  "benzinga",
-  "medium",
-  "substack",
-];
-
-export function classifySource(source: string): SourceType {
-  const s = source.toLowerCase();
-  if (OFFICIAL_PATTERNS.some((p) => s.includes(p))) return "official";
-  if (SOCIAL_PATTERNS.some((p) => s.includes(p))) return "social_unverified";
-  return "media";
-}
+export { classifySource };
