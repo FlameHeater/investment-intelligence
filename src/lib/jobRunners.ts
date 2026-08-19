@@ -1,11 +1,15 @@
 import { prisma } from "./db";
-import { buildScoringContext, type AssetRow } from "./assetService";
 import { computeScore } from "./scoring/orchestrator";
 import { MODE_LIST } from "./modes";
 import { getActiveMode } from "./settings";
+import { invalidateUniverseCache, loadUniverseSnapshot } from "./universeSnapshot";
 import { aiEnabled } from "./ai/client";
 import { explainChange } from "./ai/educationAgent";
 import type { InvestmentMode } from "./types";
+import type { ScoringContext } from "./scoring/orchestrator";
+
+/** Bentuk berita yang dibutuhkan sentimentScore(). */
+type ScoringNews = ScoringContext["news"][number];
 
 /**
  * Logika job yang tidak menyentuh jaringan eksternal, ditaruh di lib supaya
@@ -62,23 +66,86 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   throw lastError;
 }
 
+/** Pesan error Prisma bisa puluhan baris; hanya baris pertama yang informatif. */
+function firstLine(err: unknown): string {
+  return String((err as Error)?.message ?? err).split(/\r?\n/)[0];
+}
+
 const SCORE_DELTA_THRESHOLD = 5;
 const PRICE_DELTA_THRESHOLD = 5;
 
 export async function runRescore(options: { allModes?: boolean } = {}): Promise<JobOutcome> {
-  const activeMode = await getActiveMode();
-  const modes: InvestmentMode[] = options.allModes ? MODE_LIST.map((m) => m.id) : [activeMode];
+  // Default menghitung SELURUH mode, bukan hanya yang sedang aktif.
+  //
+  // Sebelumnya hanya mode aktif yang dihitung. Akibatnya begitu pengguna
+  // mengganti Investment Mode lewat menu, seluruh aplikasi tampak kosong —
+  // skor, top movers, dan screener semuanya n/a — sampai job dijalankan ulang.
+  // Perhitungannya sendiri murni CPU dan berbagi pembacaan data yang sama,
+  // jadi menghitung keempatnya sekaligus praktis tidak menambah biaya baca.
+  const modes: InvestmentMode[] =
+    options.allModes === false ? [await getActiveMode()] : MODE_LIST.map((m) => m.id);
 
-  const assets = (await prisma.asset.findMany({ orderBy: { ticker: "asc" } })) as AssetRow[];
+  // Satu pemuatan massal untuk seluruh universe. Versi sebelumnya memanggil
+  // buildScoringContext() per aset (4 query masing-masing), yang di Postgres
+  // terkelola membuat job ini berjalan belasan menit dan rawan putus koneksi
+  // di tengah jalan.
+  const universe = await withRetry(() => loadUniverseSnapshot({ force: true }));
+
+  // Berita untuk dimensi sentimen — satu query untuk seluruh universe, dibatasi
+  // ke 14 hari terakhir karena hanya rentang itu yang dipakai sentimentScore().
+  const newsRows = await withRetry(() =>
+    prisma.news.findMany({
+      where: { publishedAt: { gte: new Date(Date.now() - 14 * 86_400_000) } },
+      orderBy: { publishedAt: "desc" },
+      select: {
+        assetId: true,
+        title: true,
+        sentiment: true,
+        publishedAt: true,
+        sourceType: true,
+      },
+    }),
+  );
+
+  const newsByAsset = new Map<string, ScoringNews[]>();
+  for (const row of newsRows) {
+    const list = newsByAsset.get(row.assetId) ?? [];
+    list.push({
+      title: row.title,
+      sentiment: row.sentiment,
+      publishedAt: row.publishedAt,
+      sourceType: row.sourceType,
+    });
+    newsByAsset.set(row.assetId, list);
+  }
 
   let ok = 0;
   let failed = 0;
   let skipped = 0;
   const failures: string[] = [];
+  const pending: {
+    assetId: string;
+    investmentMode: string;
+    fundamentalScore: number | null;
+    technicalScore: number | null;
+    valuationScore: number | null;
+    sentimentScore: number | null;
+    riskScore: number | null;
+    overallScore: number;
+    confidence: number;
+    breakdownJson: string;
+  }[] = [];
 
-  for (const asset of assets) {
+  for (const row of universe.rows) {
     try {
-      const ctx = await withRetry(() => buildScoringContext(asset));
+      const ctx: ScoringContext = {
+        ticker: row.asset.ticker,
+        assetType: row.asset.assetType,
+        technical: row.technical,
+        fundamentals: row.fundamentals,
+        news: newsByAsset.get(row.asset.id) ?? [],
+        priceAgeHours: row.priceAgeHours,
+      };
 
       for (const mode of modes) {
         const result = computeScore(ctx, mode);
@@ -91,31 +158,39 @@ export async function runRescore(options: { allModes?: boolean } = {}): Promise<
           continue;
         }
 
-        await withRetry(() =>
-          prisma.analysisScore.create({
-            data: {
-              assetId: asset.id,
-              investmentMode: mode,
-              fundamentalScore: result.breakdown.fundamental.score,
-              technicalScore: result.breakdown.technical.score,
-              valuationScore: result.breakdown.valuation.score,
-              sentimentScore: result.breakdown.sentiment.score,
-              riskScore: result.breakdown.risk.score,
-              overallScore: result.overallScore,
-              confidence: result.confidence,
-              breakdownJson: JSON.stringify({
-                breakdown: result.breakdown,
-                effectiveWeights: result.effectiveWeights,
-                warnings: result.warnings,
-              }),
-            },
+        pending.push({
+          assetId: row.asset.id,
+          investmentMode: mode,
+          fundamentalScore: result.breakdown.fundamental.score,
+          technicalScore: result.breakdown.technical.score,
+          valuationScore: result.breakdown.valuation.score,
+          sentimentScore: result.breakdown.sentiment.score,
+          riskScore: result.breakdown.risk.score,
+          overallScore: result.overallScore,
+          confidence: result.confidence,
+          breakdownJson: JSON.stringify({
+            breakdown: result.breakdown,
+            effectiveWeights: result.effectiveWeights,
+            warnings: result.warnings,
           }),
-        );
+        });
         ok++;
       }
     } catch (err) {
       failed++;
-      failures.push(`${asset.ticker}: ${(err as Error).message.split("\n")[0]}`);
+      failures.push(`${row.asset.ticker}: ${firstLine(err)}`);
+    }
+  }
+
+  // Tulis massal: satu perjalanan jaringan per 200 baris, bukan per skor.
+  for (let i = 0; i < pending.length; i += 200) {
+    const chunk = pending.slice(i, i + 200);
+    try {
+      await withRetry(() => prisma.analysisScore.createMany({ data: chunk }));
+    } catch (err) {
+      failed += chunk.length;
+      ok -= chunk.length;
+      failures.push(`batch ${i}: ${firstLine(err)}`);
     }
   }
 
@@ -132,10 +207,16 @@ export async function runRescore(options: { allModes?: boolean } = {}): Promise<
     )
   `;
   if (stale.length > 0) {
-    await prisma.analysisScore.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
+    for (let i = 0; i < stale.length; i += 500) {
+      await prisma.analysisScore.deleteMany({
+        where: { id: { in: stale.slice(i, i + 500).map((s) => s.id) } },
+      });
+    }
   }
 
-  const base = `${ok} skor tersimpan, ${skipped} dilewati karena tidak ada data sama sekali, ${stale.length} skor lama dipangkas.`;
+  invalidateUniverseCache();
+
+  const base = `${ok} skor tersimpan untuk ${modes.length} mode (${modes.join(", ")}), ${skipped} dilewati karena tidak ada data sama sekali, ${stale.length} skor lama dipangkas.`;
 
   return {
     ok,
