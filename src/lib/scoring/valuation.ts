@@ -43,7 +43,7 @@ export function valuationScore(ctx: ScoringContext): SubScore {
   if (score === null) {
     notes.unshift(
       ctx.assetType === "idx_stock"
-        ? "Data valuasi IDX (PER/PBV) tidak tersedia di sumber gratis — lihat PRD §4."
+        ? "Belum ada data valuasi IDX tersimpan. Aktifkan ENABLE_PLUANG_SCRAPE lalu jalankan `npm run job:fundamentals`."
         : "Belum ada data valuasi tersimpan. Isi FINNHUB_API_KEY lalu jalankan `npm run job:fundamentals`.",
     );
   }

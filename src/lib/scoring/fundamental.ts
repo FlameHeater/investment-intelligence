@@ -49,7 +49,7 @@ export function fundamentalScore(ctx: ScoringContext): SubScore {
   if (score === null) {
     notes.push(
       ctx.assetType === "idx_stock"
-        ? "Data fundamental IDX tidak tersedia di sumber gratis (PRD §4). Skor fundamental sengaja dikosongkan, bukan diisi angka perkiraan."
+        ? "Belum ada data fundamental IDX tersimpan. Aktifkan ENABLE_PLUANG_SCRAPE lalu jalankan `npm run job:fundamentals`. Tanpa itu skor fundamental sengaja dikosongkan, bukan diisi angka perkiraan."
         : "Belum ada data fundamental tersimpan. Isi FINNHUB_API_KEY lalu jalankan `npm run job:fundamentals`.",
     );
   } else if (completeness < 0.6) {

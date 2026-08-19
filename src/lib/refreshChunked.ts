@@ -13,6 +13,7 @@ import {
 } from "./providers/coingecko";
 import { fetchCompanyNews, fetchMetrics, finnhubEnabled, FINNHUB_SOURCE } from "./providers/finnhub";
 import { fetchIdxNews } from "./providers/googleNewsId";
+import { fetchPluangFundamentals, pluangEnabled, PLUANG_SOURCE } from "./providers/pluangIdx";
 import { runRescore } from "./jobRunners";
 import { invalidateUniverseCache } from "./universeSnapshot";
 
@@ -287,7 +288,22 @@ async function runMarketSlice(state: RefreshState, deadline: number): Promise<Re
 }
 
 async function runFundamentalsSlice(state: RefreshState, deadline: number): Promise<RefreshState> {
-  if (!finnhubEnabled()) {
+  // Dua sumber digabung jadi satu daftar berindeks, sama seperti fase berita:
+  //   - saham AS lewat Finnhub (butuh FINNHUB_API_KEY)
+  //   - saham IDX lewat halaman publik Pluang (butuh ENABLE_PLUANG_SCRAPE)
+  const usAssets = finnhubEnabled()
+    ? await prisma.asset.findMany({ where: { assetType: "us_stock" }, orderBy: { ticker: "asc" } })
+    : [];
+  const idxAssets = pluangEnabled()
+    ? await prisma.asset.findMany({ where: { assetType: "idx_stock" }, orderBy: { ticker: "asc" } })
+    : [];
+
+  const tasks = [
+    ...usAssets.map((a) => ({ kind: "us" as const, asset: a })),
+    ...idxAssets.map((a) => ({ kind: "idx" as const, asset: a })),
+  ];
+
+  if (tasks.length === 0) {
     return writeState({
       ...state,
       phase: "news",
@@ -299,27 +315,36 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
         {
           phase: "fundamentals",
           message:
-            "Dilewati — FINNHUB_API_KEY belum diisi, jadi tidak ada sumber fundamental. Skor fundamental & valuasi tetap kosong.",
+            "Dilewati — tidak ada sumber fundamental yang aktif (FINNHUB_API_KEY untuk saham AS, ENABLE_PLUANG_SCRAPE untuk saham IDX).",
         },
       ],
     });
   }
 
-  const assets = await prisma.asset.findMany({
-    where: { assetType: "us_stock" },
-    orderBy: { ticker: "asc" },
-  });
-
   let cursor = state.cursor;
   let processed = state.phaseCount;
-  const period = `TTM-${new Date().toISOString().slice(0, 7)}`;
   const now = new Date();
+  const period = `TTM-${now.toISOString().slice(0, 7)}`;
   let label = "";
 
-  while (cursor < assets.length && Date.now() < deadline) {
-    const asset = assets[cursor];
+  while (cursor < tasks.length && Date.now() < deadline) {
+    const { kind, asset } = tasks[cursor];
     label = `Fundamental ${asset.ticker}`;
-    const metrics = await fetchMetrics(asset.providerSymbol ?? asset.ticker);
+
+    let metrics: { metric: string; value: number }[] = [];
+    let source = FINNHUB_SOURCE;
+    let reportedAt = now;
+
+    if (kind === "us") {
+      metrics = await fetchMetrics(asset.providerSymbol ?? asset.ticker);
+    } else {
+      const hasil = await fetchPluangFundamentals(asset.ticker);
+      metrics = hasil.metrics;
+      source = PLUANG_SOURCE;
+      // Tanggal pelaporan dari Pluang, bukan waktu pengambilan — supaya UI bisa
+      // menunjukkan seberapa lama laporan keuangannya sendiri sudah lewat.
+      reportedAt = hasil.reportedAt ?? now;
+    }
 
     for (const m of metrics) {
       await prisma.fundamentalData.upsert({
@@ -329,11 +354,11 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
           metric: m.metric,
           value: m.value,
           period,
-          source: FINNHUB_SOURCE,
-          reportedAt: now,
+          source,
+          reportedAt,
           fetchedAt: now,
         },
-        update: { value: m.value, fetchedAt: now },
+        update: { value: m.value, source, reportedAt, fetchedAt: now },
       });
     }
 
@@ -341,7 +366,7 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
     cursor++;
   }
 
-  const finishedPhase = cursor >= assets.length;
+  const finishedPhase = cursor >= tasks.length;
   invalidateUniverseCache();
 
   return writeState({
@@ -349,13 +374,13 @@ async function runFundamentalsSlice(state: RefreshState, deadline: number): Prom
     phase: finishedPhase ? "news" : "fundamentals",
     cursor: finishedPhase ? 0 : cursor,
     phaseCount: finishedPhase ? 0 : processed,
-    progress: { done: cursor, total: assets.length, label },
+    progress: { done: cursor, total: tasks.length, label },
     log: finishedPhase
       ? [
           ...state.log,
           {
             phase: "fundamentals",
-            message: `${processed} dari ${assets.length} saham AS punya fundamental terbaru.`,
+            message: `${processed} dari ${tasks.length} emiten punya fundamental terbaru (${usAssets.length} saham AS, ${idxAssets.length} saham IDX).`,
           },
         ]
       : state.log,

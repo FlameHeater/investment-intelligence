@@ -37,6 +37,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
       COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+      # Fundamental IDX dari halaman publik Pluang; opsional dan mati kalau tidak diisi.
+      ENABLE_PLUANG_SCRAPE: ${{ vars.ENABLE_PLUANG_SCRAPE }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:

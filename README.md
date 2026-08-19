@@ -104,6 +104,7 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |
 | `CRON_SECRET` | Tidak | Mengaktifkan endpoint `/api/cron/[job]` untuk Vercel Cron |
+| `ENABLE_PLUANG_SCRAPE` | Tidak | Fundamental saham IDX dari halaman publik Pluang — **mati secara default**, lihat catatan di bawah |
 
 Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan menampilkan hasil kosong tanpa keterangan.
 
@@ -202,11 +203,19 @@ Hasilnya tetap memenuhi prinsip Explainable AI dari PRD asli — bahkan lebih ba
 | Kelas aset | Jumlah | Sumber harga | Fundamental | Berita |
 |---|---|---|---|---|
 | Saham AS | ~107 large/mid cap | Yahoo Finance chart | Finnhub (opsional) | Finnhub (opsional) |
-| Saham IDX | ~59 LQ45/blue chip | Yahoo Finance (`.JK`) | **Tidak tersedia** | Google News RSS (tanpa API key) |
+| Saham IDX | ~59 LQ45/blue chip | Yahoo Finance (`.JK`) | Halaman publik Pluang (opsional) | Google News RSS (tanpa API key) |
 | Kripto | 100 teratas by market cap | CoinGecko | Tidak berlaku | Belum ada sumber |
 | Emas | GLD + GC=F | Yahoo Finance | Tidak berlaku | — |
 
-**Soal saham IDX:** per Agustus 2026 tidak ada API resmi IDX yang gratis dan stabil untuk data fundamental. Yang tersedia gratis hanyalah harga lewat endpoint publik Yahoo Finance (tanpa SLA). Aplikasi ini menampilkan "tidak tersedia" untuk fundamental IDX alih-alih mengarang angka, dan confidence skornya turun sesuai. Berlangganan penyedia berbayar (mis. Sectors.app) adalah keputusan Phase 2, setelah terbukti fitur ini memang dipakai.
+**Soal saham IDX:** tidak ada API resmi IDX yang gratis dan stabil untuk data fundamental. Ada dua jalan keluar, dan keduanya punya konsekuensi:
+
+1. **Halaman publik Pluang** (`ENABLE_PLUANG_SCRAPE=true`, mati secara default). Menyediakan PER, PBV, ROE, ROA, margin, EPS, nilai buku, dan dividend yield untuk emiten IDX — persis celah yang selama ini kosong. `robots.txt` Pluang mengizinkan jalur yang dipakai dan mendaftarkannya di sitemap agar diindeks, tapi **robots.txt mengatur perayapan untuk pengindeksan, bukan penggunaan ulang datanya di produk lain.** Pluang platform komersial yang kemungkinan melisensikan data itu dari penyedia hulu, jadi risikonya bukan hanya ToS mereka. Untuk alat pribadi single-user itu keputusan pemiliknya; kalau aplikasi dibagikan atau dimonetisasi, PRD §12 mensyaratkan tinjauan hukum lebih dulu. Karena itu sumbernya opt-in, bukan menyala diam-diam.
+
+2. **Sectors.app** — penyedia berlisensi asal Indonesia (berbayar), disebut PRD §13 sebagai kandidat Phase 2. Ini jalan yang menghilangkan pertanyaan hukumnya sama sekali.
+
+Selama keduanya mati, aplikasi menampilkan "belum ada data" untuk fundamental IDX alih-alih mengarang angka, dan confidence skornya turun sesuai.
+
+Satu catatan teknis yang ditemukan saat mengintegrasikan Pluang: satuan yang mereka tampilkan tidak konsisten — `de` diberi imbuhan `%` padahal berperilaku sebagai kelipatan (BBCA 4,6x, wajar untuk bank), sedangkan `cr` memang persen (TLKM 83,53% = rasio 0,84). Keduanya dinormalkan di `providers/pluangIdx.ts` dan setiap nilai diuji terhadap rentang yang masuk akal sebelum disimpan; yang di luar rentang dibuang, karena angka salah satuan akan merusak skor tanpa meninggalkan jejak.
 
 **Soal emas:** komoditas tidak punya laporan keuangan, jadi dimensi fundamental dan valuasi dilewati. Itu bukan bug.
 

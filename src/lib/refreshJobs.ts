@@ -8,6 +8,7 @@ import {
 } from "./providers/coingecko";
 import { fetchCompanyNews, fetchMetrics, finnhubEnabled, FINNHUB_SOURCE } from "./providers/finnhub";
 import { fetchIdxNews } from "./providers/googleNewsId";
+import { fetchPluangFundamentals, pluangEnabled, PLUANG_SOURCE } from "./providers/pluangIdx";
 import { classifySentiment } from "./scoring/sentiment";
 import { invalidateUniverseCache } from "./universeSnapshot";
 import type { NewsItem } from "./providers/finnhub";
@@ -237,52 +238,70 @@ export async function refreshMarketData(options: RefreshOptions = {}): Promise<J
  * reliable, dan kripto/emas memang tidak punya laporan keuangan sama sekali.
  */
 export async function refreshFundamentals(options: RefreshOptions = {}): Promise<JobOutcome> {
-  if (!finnhubEnabled()) {
+  if (!finnhubEnabled() && !pluangEnabled()) {
     return {
       ok: 0,
       failed: 0,
       message:
-        "FINNHUB_API_KEY kosong — dilewati. Skor fundamental & valuasi tetap kosong, dan UI menampilkannya apa adanya.",
+        "Dilewati — tidak ada sumber fundamental yang aktif (FINNHUB_API_KEY untuk saham AS, ENABLE_PLUANG_SCRAPE untuk saham IDX). Dimensi fundamental & valuasi tetap kosong.",
     };
   }
 
-  const assets = await prisma.asset.findMany({
-    where: { assetType: "us_stock" },
-    orderBy: { ticker: "asc" },
-  });
+  const usAssets = finnhubEnabled()
+    ? await prisma.asset.findMany({ where: { assetType: "us_stock" }, orderBy: { ticker: "asc" } })
+    : [];
+  const idxAssets = pluangEnabled()
+    ? await prisma.asset.findMany({ where: { assetType: "idx_stock" }, orderBy: { ticker: "asc" } })
+    : [];
 
+  const total = usAssets.length + idxAssets.length;
   let ok = 0;
   let failed = 0;
-  const period = `TTM-${new Date().toISOString().slice(0, 7)}`;
-  const now = new Date();
   let done = 0;
+  const now = new Date();
+  const period = `TTM-${now.toISOString().slice(0, 7)}`;
 
-  for (const asset of assets) {
+  const simpan = async (
+    assetId: string,
+    metrics: { metric: string; value: number }[],
+    source: string,
+    reportedAt: Date,
+  ) => {
+    for (const m of metrics) {
+      await prisma.fundamentalData.upsert({
+        where: { assetId_metric_period: { assetId, metric: m.metric, period } },
+        create: { assetId, metric: m.metric, value: m.value, period, source, reportedAt, fetchedAt: now },
+        update: { value: m.value, source, reportedAt, fetchedAt: now },
+      });
+    }
+  };
+
+  // ── Saham AS lewat Finnhub ──────────────────────────────────────────────
+  for (const asset of usAssets) {
     const metrics = await fetchMetrics(asset.providerSymbol ?? asset.ticker);
-
     if (metrics.length === 0) {
       failed++;
     } else {
-      for (const m of metrics) {
-        await prisma.fundamentalData.upsert({
-          where: { assetId_metric_period: { assetId: asset.id, metric: m.metric, period } },
-          create: {
-            assetId: asset.id,
-            metric: m.metric,
-            value: m.value,
-            period,
-            source: FINNHUB_SOURCE,
-            reportedAt: now,
-            fetchedAt: now,
-          },
-          update: { value: m.value, fetchedAt: now },
-        });
-      }
+      await simpan(asset.id, metrics, FINNHUB_SOURCE, now);
       ok++;
     }
-
     done++;
-    options.onProgress?.(done, assets.length, `Fundamental ${asset.ticker}`);
+    options.onProgress?.(done, total, `Fundamental ${asset.ticker}`);
+  }
+
+  // ── Saham IDX lewat halaman publik Pluang ───────────────────────────────
+  // reportedAt memakai tanggal pelaporan dari Pluang, bukan waktu pengambilan,
+  // supaya UI bisa menunjukkan seberapa lama laporan itu sendiri sudah lewat.
+  for (const asset of idxAssets) {
+    const hasil = await fetchPluangFundamentals(asset.ticker);
+    if (hasil.metrics.length === 0) {
+      failed++;
+    } else {
+      await simpan(asset.id, hasil.metrics, PLUANG_SOURCE, hasil.reportedAt ?? now);
+      ok++;
+    }
+    done++;
+    options.onProgress?.(done, total, `Fundamental ${asset.ticker}`);
   }
 
   invalidateUniverseCache();
@@ -290,7 +309,7 @@ export async function refreshFundamentals(options: RefreshOptions = {}): Promise
   return {
     ok,
     failed,
-    message: `${ok} saham AS punya fundamental terbaru. ${failed} tidak mengembalikan metrik apa pun.`,
+    message: `${ok} emiten punya fundamental terbaru (${usAssets.length} saham AS, ${idxAssets.length} saham IDX diperiksa). ${failed} tidak mengembalikan metrik apa pun.`,
   };
 }
 

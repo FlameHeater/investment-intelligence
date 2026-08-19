@@ -206,7 +206,7 @@ export default async function AssetPage({ params }: { params: Promise<{ ticker: 
             ) : snapshot.fundamentals.size === 0 ? (
               <p className="rounded border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
                 {asset.assetType === "idx_stock"
-                  ? "Data fundamental saham IDX tidak tersedia di sumber gratis yang reliable per Agustus 2026 (PRD §4). Alih-alih menampilkan angka perkiraan, bagian ini sengaja dikosongkan — dan confidence skor ikut turun karenanya."
+                  ? "Belum ada data fundamental tersimpan untuk emiten ini. Sumbernya opsional dan mati secara default — aktifkan ENABLE_PLUANG_SCRAPE lalu jalankan Perbarui data. Selama kosong, confidence skor ikut turun dan bagian ini sengaja dibiarkan kosong alih-alih diisi angka perkiraan."
                   : "Belum ada data fundamental tersimpan. Isi FINNHUB_API_KEY di .env lalu jalankan `npm run job:fundamentals`."}
               </p>
             ) : (
