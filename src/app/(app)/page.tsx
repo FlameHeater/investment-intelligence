@@ -23,6 +23,7 @@ import {
   TickerLink,
 } from "@/components/ui";
 import { SearchBox } from "@/components/SearchBox";
+import { RefreshDataButton } from "@/components/RefreshDataButton";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -97,7 +98,10 @@ export default async function DashboardPage() {
             lokal.
           </p>
         </div>
-        <SearchBox />
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-start">
+          <SearchBox />
+          <RefreshDataButton />
+        </div>
       </div>
 
       {overview.needsSetup && (

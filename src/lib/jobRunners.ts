@@ -24,6 +24,44 @@ export interface JobOutcome {
   message: string;
 }
 
+/**
+ * Mengulang operasi database yang gagal karena gangguan koneksi sesaat.
+ *
+ * Perlu karena Postgres terkelola (Neon, Supabase) mematikan compute saat idle
+ * dan membatasi jumlah koneksi di tier gratis. Job yang berjalan belasan menit
+ * hampir pasti menemui satu-dua putus koneksi; tanpa percobaan ulang, aset yang
+ * kebetulan diproses saat itu kehilangan skornya sampai job berikutnya.
+ *
+ * Hanya kesalahan konektivitas yang diulang. Kesalahan logika atau constraint
+ * dilempar apa adanya supaya tidak tersembunyi di balik percobaan ulang.
+ */
+const TRANSIENT_PATTERNS = [
+  "can't reach database server",
+  "connection pool",
+  "timed out fetching",
+  "connection closed",
+  "server has closed the connection",
+  "econnreset",
+];
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const message = (err as Error).message?.toLowerCase() ?? "";
+      const transient = TRANSIENT_PATTERNS.some((p) => message.includes(p));
+      if (!transient || i === attempts - 1) throw err;
+      await new Promise((r) => setTimeout(r, 1500 * 2 ** i));
+    }
+  }
+
+  throw lastError;
+}
+
 const SCORE_DELTA_THRESHOLD = 5;
 const PRICE_DELTA_THRESHOLD = 5;
 
@@ -36,10 +74,11 @@ export async function runRescore(options: { allModes?: boolean } = {}): Promise<
   let ok = 0;
   let failed = 0;
   let skipped = 0;
+  const failures: string[] = [];
 
   for (const asset of assets) {
     try {
-      const ctx = await buildScoringContext(asset);
+      const ctx = await withRetry(() => buildScoringContext(asset));
 
       for (const mode of modes) {
         const result = computeScore(ctx, mode);
@@ -52,28 +91,31 @@ export async function runRescore(options: { allModes?: boolean } = {}): Promise<
           continue;
         }
 
-        await prisma.analysisScore.create({
-          data: {
-            assetId: asset.id,
-            investmentMode: mode,
-            fundamentalScore: result.breakdown.fundamental.score,
-            technicalScore: result.breakdown.technical.score,
-            valuationScore: result.breakdown.valuation.score,
-            sentimentScore: result.breakdown.sentiment.score,
-            riskScore: result.breakdown.risk.score,
-            overallScore: result.overallScore,
-            confidence: result.confidence,
-            breakdownJson: JSON.stringify({
-              breakdown: result.breakdown,
-              effectiveWeights: result.effectiveWeights,
-              warnings: result.warnings,
-            }),
-          },
-        });
+        await withRetry(() =>
+          prisma.analysisScore.create({
+            data: {
+              assetId: asset.id,
+              investmentMode: mode,
+              fundamentalScore: result.breakdown.fundamental.score,
+              technicalScore: result.breakdown.technical.score,
+              valuationScore: result.breakdown.valuation.score,
+              sentimentScore: result.breakdown.sentiment.score,
+              riskScore: result.breakdown.risk.score,
+              overallScore: result.overallScore,
+              confidence: result.confidence,
+              breakdownJson: JSON.stringify({
+                breakdown: result.breakdown,
+                effectiveWeights: result.effectiveWeights,
+                warnings: result.warnings,
+              }),
+            },
+          }),
+        );
         ok++;
       }
-    } catch {
+    } catch (err) {
       failed++;
+      failures.push(`${asset.ticker}: ${(err as Error).message.split("\n")[0]}`);
     }
   }
 
@@ -93,10 +135,17 @@ export async function runRescore(options: { allModes?: boolean } = {}): Promise<
     await prisma.analysisScore.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
   }
 
+  const base = `${ok} skor tersimpan, ${skipped} dilewati karena tidak ada data sama sekali, ${stale.length} skor lama dipangkas.`;
+
   return {
     ok,
     failed,
-    message: `${ok} skor tersimpan, ${skipped} dilewati karena tidak ada data sama sekali, ${stale.length} skor lama dipangkas.`,
+    // Kegagalan disebut satu per satu, bukan sekadar dihitung — kalau sebuah aset
+    // kehilangan skornya, penyebabnya harus bisa dilacak tanpa menjalankan ulang.
+    message:
+      failures.length > 0
+        ? `${base} GAGAL (${failures.length}): ${failures.slice(0, 10).join(" | ")}${failures.length > 10 ? " ..." : ""}`
+        : base,
   };
 }
 

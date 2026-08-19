@@ -15,6 +15,7 @@ Dibangun dari [PRD Investment Intelligence Assistant v2](../PRD_Investment_Intel
 - [Menjalankan (5 menit)](#menjalankan-5-menit)
 - [Variabel environment](#variabel-environment)
 - [Perintah](#perintah)
+- [Memperbarui data](#memperbarui-data)
 - [Arsitektur](#arsitektur)
 - [Cakupan data & batasannya](#cakupan-data--batasannya)
 - [Investment Mode](#investment-mode)
@@ -104,6 +105,8 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |
 | `CRON_SECRET` | Tidak | Mengaktifkan endpoint `/api/cron/[job]` untuk Vercel Cron |
+| `GITHUB_DISPATCH_TOKEN` | Tidak | Membuat tombol "Perbarui data" berfungsi di deployment Vercel (lihat [Memperbarui data](#memperbarui-data)) |
+| `GITHUB_REPOSITORY` | Tidak | Pasangan token di atas, mis. `FlameHeater/investment-intelligence` |
 
 Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan menampilkan hasil kosong tanpa keterangan.
 
@@ -126,6 +129,24 @@ Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan men
 | `npm run cron` | Scheduler jangka panjang (jalankan di terminal terpisah) |
 | `npm run db:studio` | Prisma Studio untuk memeriksa isi database |
 | `npm run typecheck` | Periksa tipe TypeScript |
+
+---
+
+## Memperbarui data
+
+Ada tombol **Perbarui data** di kanan atas dashboard. Ia menjalankan pipeline lengkap: harga → fundamental → berita → hitung ulang skor, dengan progres per tahap yang bisa dibuka.
+
+Yang dilakukan tombol itu bergantung pada tempat aplikasi berjalan, dan UI menyatakannya secara terbuka alih-alih menampilkan tombol yang diam-diam tidak bekerja:
+
+| Lingkungan | Perilaku |
+|---|---|
+| Lokal / VPS / Raspberry Pi | Dijalankan langsung oleh proses server. Progres tampil per tahap. Halaman boleh ditutup — job tetap jalan. |
+| Vercel + `GITHUB_DISPATCH_TOKEN` | Memicu workflow GitHub Actions yang menulis ke database yang sama, dan menampilkan tautan ke run-nya. |
+| Vercel tanpa token | Tombol nonaktif disertai penjelasan kenapa. |
+
+Alasan pembedaan ini: menarik ~270 aset butuh 15-25 menit karena limiter provider gratis, sedangkan fungsi serverless Vercel dihentikan setelah beberapa puluh detik dan pekerjaan latar apa pun ikut mati begitu response dikirim. Menjalankannya di sana bukan lambat — melainkan tidak akan pernah selesai.
+
+Untuk mengaktifkan jalur GitHub Actions: buat Personal Access Token dengan scope `workflow`, lalu isi `GITHUB_DISPATCH_TOKEN` dan `GITHUB_REPOSITORY` di environment variable Vercel. Workflow-nya juga butuh repository secret `DATABASE_URL` yang menunjuk ke database produksi.
 
 ---
 

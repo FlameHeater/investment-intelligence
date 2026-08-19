@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { prisma } from "./db";
-import { caseInsensitive } from "./dbCompat";
-import { buildSnapshot, type AssetRow, type AssetSnapshot } from "./assetService";
+import { loadLatestScores, loadUniverseSnapshot, type UniverseRow } from "./universeSnapshot";
 import { METRIC_BY_KEY } from "./metrics";
 import type { AssetType, InvestmentMode } from "./types";
 
@@ -66,7 +64,7 @@ export interface ScreenerResult {
 
 /** Ambil semua nilai yang bisa difilter untuk satu aset. */
 function extractValues(
-  snapshot: AssetSnapshot,
+  snapshot: UniverseRow,
   score: { overallScore: number; confidence: number } | null,
 ): Record<string, number | null> {
   const t = snapshot.technical;
@@ -133,35 +131,29 @@ export async function runScreener(
     return true;
   });
 
-  const assets = (await prisma.asset.findMany({
-    where: {
-      ...(query.assetTypes.length ? { assetType: { in: query.assetTypes } } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { ticker: { contains: query.search.toUpperCase() } },
-              { name: { contains: query.search, ...caseInsensitive() } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { ticker: "asc" },
-  })) as AssetRow[];
+  // Seluruh universe dimuat sekali (lihat lib/universeSnapshot.ts), lalu
+  // penyaringan dilakukan di memori. Sebelumnya tiap aset memicu 4 query
+  // sendiri, yang membuat screener butuh lebih dari seribu round-trip.
+  const [universe, scoreByAsset] = await Promise.all([
+    loadUniverseSnapshot(),
+    loadLatestScores(mode),
+  ]);
 
-  // Skor terbaru per aset untuk mode aktif — satu query, bukan N query.
-  const scoreRows = await prisma.analysisScore.findMany({
-    where: { investmentMode: mode, assetId: { in: assets.map((a) => a.id) } },
-    orderBy: { createdAt: "desc" },
-    select: { assetId: true, overallScore: true, confidence: true, createdAt: true },
+  const search = query.search?.trim().toLowerCase();
+  const candidates = universe.rows.filter((row) => {
+    if (query.assetTypes.length && !query.assetTypes.includes(row.asset.assetType)) return false;
+    if (!search) return true;
+    return (
+      row.asset.ticker.toLowerCase().includes(search) ||
+      row.asset.name.toLowerCase().includes(search)
+    );
   });
-  const scoreByAsset = new Map<string, { overallScore: number; confidence: number }>();
-  for (const s of scoreRows) if (!scoreByAsset.has(s.assetId)) scoreByAsset.set(s.assetId, s);
 
   const rows: ScreenerRow[] = [];
   let excludedForMissingData = 0;
 
-  for (const asset of assets) {
-    const snapshot = await buildSnapshot(asset);
+  for (const snapshot of candidates) {
+    const asset = snapshot.asset;
     const values = extractValues(snapshot, scoreByAsset.get(asset.id) ?? null);
 
     let failed = false;

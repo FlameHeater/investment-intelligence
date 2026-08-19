@@ -1,5 +1,6 @@
 import { prisma } from "./db";
-import { buildSnapshot, lastJobRuns, type AssetRow } from "./assetService";
+import { lastJobRuns } from "./assetService";
+import { loadLatestScores, loadUniverseSnapshot } from "./universeSnapshot";
 import { MODES } from "./modes";
 import type { AssetType, Freshness, InvestmentMode } from "./types";
 
@@ -80,7 +81,13 @@ function median(values: number[]): number | null {
 }
 
 export async function getOverview(mode: InvestmentMode): Promise<Overview> {
-  const assets = (await prisma.asset.findMany({ orderBy: { ticker: "asc" } })) as AssetRow[];
+  // Satu pemuatan massal untuk seluruh universe, bukan satu snapshot per aset.
+  // Lihat lib/universeSnapshot.ts untuk alasannya.
+  const [universe, scoreByAsset] = await Promise.all([
+    loadUniverseSnapshot(),
+    loadLatestScores(mode),
+  ]);
+  const assets = universe.rows.map((r) => r.asset);
 
   if (assets.length === 0) {
     return {
@@ -100,19 +107,11 @@ export async function getOverview(mode: InvestmentMode): Promise<Overview> {
     };
   }
 
-  const scoreRows = await prisma.analysisScore.findMany({
-    where: { investmentMode: mode },
-    orderBy: { createdAt: "desc" },
-    select: { assetId: true, overallScore: true, confidence: true },
-  });
-  const scoreByAsset = new Map<string, { overallScore: number; confidence: number }>();
-  for (const s of scoreRows) if (!scoreByAsset.has(s.assetId)) scoreByAsset.set(s.assetId, s);
-
   const rows: MoverRow[] = [];
   const byType = new Map<AssetType, MoverRow[]>();
 
-  for (const asset of assets) {
-    const snapshot = await buildSnapshot(asset);
+  for (const snapshot of universe.rows) {
+    const asset = snapshot.asset;
     const score = scoreByAsset.get(asset.id);
 
     const row: MoverRow = {
