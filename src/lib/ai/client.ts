@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 /**
  * Satu pintu untuk semua panggilan AI reasoning.
@@ -87,6 +87,13 @@ async function askGemini(opts: AskOptions): Promise<string> {
       systemInstruction: opts.system,
       maxOutputTokens: opts.maxTokens ?? 2000,
       temperature: opts.temperature ?? 0.2,
+      // Tugas AI di aplikasi ini murni menjelaskan angka yang sudah dihitung
+      // deterministik — bukan reasoning terbuka. Thinking Gemini 3.x aktif
+      // default dan token-nya dipotong dari maxOutputTokens yang sama:
+      // untuk prompt reasoning 5 dimensi, thinking bisa menghabiskan ~1900
+      // dari 2000 token dan memotong jawaban JSON sebelum selesai (finishReason
+      // MAX_TOKENS). MINIMAL menghindari itu tanpa perlu menaikkan budget.
+      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
     },
   });
 
