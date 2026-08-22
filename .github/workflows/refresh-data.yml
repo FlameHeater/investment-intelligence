@@ -44,6 +44,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Periksa flag sumber data opsional
+        # Repository Variable (vars.*) beda tempat dari Environment Variable —
+        # kalau ENABLE_PLUANG_SCRAPE ditambahkan di Settings > Environments alih-alih
+        # Settings > Secrets and variables > Actions > Variables, baris ini akan
+        # menunjukkan "(kosong)" walau tampak "sudah ada" di suatu tempat di Settings.
+        run: |
+          echo "ENABLE_PLUANG_SCRAPE terbaca sebagai: '${ENABLE_PLUANG_SCRAPE:-(kosong)}'"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

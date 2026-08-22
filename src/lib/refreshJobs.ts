@@ -292,10 +292,12 @@ export async function refreshFundamentals(options: RefreshOptions = {}): Promise
   // ── Saham IDX lewat halaman publik Pluang ───────────────────────────────
   // reportedAt memakai tanggal pelaporan dari Pluang, bukan waktu pengambilan,
   // supaya UI bisa menunjukkan seberapa lama laporan itu sendiri sudah lewat.
+  let idxBlocked = 0;
   for (const asset of idxAssets) {
     const hasil = await fetchPluangFundamentals(asset.ticker);
     if (hasil.metrics.length === 0) {
       failed++;
+      if (hasil.status === "blocked") idxBlocked++;
     } else {
       await simpan(asset.id, hasil.metrics, PLUANG_SOURCE, hasil.reportedAt ?? now);
       ok++;
@@ -306,10 +308,14 @@ export async function refreshFundamentals(options: RefreshOptions = {}): Promise
 
   invalidateUniverseCache();
 
+  // idxBlocked > 0 berarti bukan celah data — Pluang menolak/rate-limit
+  // request-nya (mis. IP runner CI diblokir), beda dari "memang tidak ada".
+  const blockedNote = idxBlocked > 0 ? ` ${idxBlocked} saham IDX diblokir/rate-limited oleh Pluang (HTTP 403/429), bukan celah data.` : "";
+
   return {
     ok,
     failed,
-    message: `${ok} emiten punya fundamental terbaru (${usAssets.length} saham AS, ${idxAssets.length} saham IDX diperiksa). ${failed} tidak mengembalikan metrik apa pun.`,
+    message: `${ok} emiten punya fundamental terbaru (${usAssets.length} saham AS, ${idxAssets.length} saham IDX diperiksa). ${failed} tidak mengembalikan metrik apa pun.${blockedNote}`,
   };
 }
 

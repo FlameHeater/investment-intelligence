@@ -1,4 +1,4 @@
-import { RateLimiter } from "./http";
+import { fetchText, ProviderError, RateLimiter } from "./http";
 
 /**
  * Fundamental saham IDX dari halaman publik Pluang.
@@ -36,11 +36,25 @@ export interface PluangMetric {
   value: number;
 }
 
+/**
+ * 'ok'       — metrik berhasil diambil dan diurai.
+ * 'empty'    — halaman terbuka normal tapi tidak ada metrik yang bisa diurai
+ *              (celah data asli di sisi Pluang, mis. rasio yang memang tidak
+ *              mereka tampilkan untuk emiten itu).
+ * 'blocked'  — HTTP 403/429 setelah retry: kemungkinan diblokir/rate-limited.
+ *              Beda arti dari 'empty' — ini BUKAN celah data, tapi kegagalan
+ *              pengambilan yang perlu diselidiki (mis. IP runner CI diblokir).
+ * 'error'    — kegagalan jaringan/parsing lain setelah retry.
+ * 'disabled' — ENABLE_PLUANG_SCRAPE mati.
+ */
+export type PluangStatus = "ok" | "empty" | "blocked" | "error" | "disabled";
+
 export interface PluangResult {
   metrics: PluangMetric[];
   /** teks periode pelaporan dari Pluang, mis. "Diperbarui 29 Jul 2026" */
   reportedLabel: string | null;
   reportedAt: Date | null;
+  status: PluangStatus;
 }
 
 /**
@@ -148,33 +162,42 @@ const NEXT_DATA_RE =
  * @param ticker kode emiten apa adanya dari database, mis. "BBCA.JK"
  */
 export async function fetchPluangFundamentals(ticker: string): Promise<PluangResult> {
-  const kosong: PluangResult = { metrics: [], reportedLabel: null, reportedAt: null };
-  if (!pluangEnabled()) return kosong;
+  const kosong = (status: PluangStatus): PluangResult => ({
+    metrics: [],
+    reportedLabel: null,
+    reportedAt: null,
+    status,
+  });
+  if (!pluangEnabled()) return kosong("disabled");
 
   const kode = ticker.replace(/\.JK$/i, "").toUpperCase();
 
   let html: string;
   try {
-    html = await limiter.run(async () => {
-      const res = await fetch(`https://pluang.com/asset/indo-stock/${kode}/fundamentals`, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-          Accept: "text/html,application/xhtml+xml",
-        },
-        cache: "no-store",
-        signal: AbortSignal.timeout(25_000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.text();
+    html = await fetchText(`https://pluang.com/asset/indo-stock/${kode}/fundamentals`, {
+      provider: "pluang",
+      limiter,
+      timeoutMs: 25_000,
+      headers: { Accept: "text/html,application/xhtml+xml" },
     });
-  } catch {
-    // Kegagalan satu emiten tidak boleh menggagalkan seluruh job.
-    return kosong;
+  } catch (err) {
+    // Kegagalan satu emiten tidak boleh menggagalkan seluruh job — tapi
+    // dicatat ke console supaya kelihatan di log job (GitHub Actions dsb),
+    // karena diblokir dan "memang tidak ada data" butuh tindak lanjut beda.
+    const status = err instanceof ProviderError && (err.status === 403 || err.status === 429);
+    console.warn(
+      `[pluang] ${kode}: gagal diambil setelah retry (${
+        err instanceof Error ? err.message : String(err)
+      })`,
+    );
+    return kosong(status ? "blocked" : "error");
   }
 
   const cocok = html.match(NEXT_DATA_RE);
-  if (!cocok) return kosong;
+  if (!cocok) {
+    console.warn(`[pluang] ${kode}: __NEXT_DATA__ tidak ditemukan di halaman — kemungkinan struktur halaman Pluang berubah.`);
+    return kosong("error");
+  }
 
   let fundamentals: NonNullable<
     NonNullable<NextData["props"]>["pageProps"]
@@ -182,9 +205,10 @@ export async function fetchPluangFundamentals(ticker: string): Promise<PluangRes
   try {
     fundamentals = (JSON.parse(cocok[1]) as NextData).props?.pageProps?.assetFundamentals;
   } catch {
-    return kosong;
+    console.warn(`[pluang] ${kode}: __NEXT_DATA__ tidak bisa di-parse sebagai JSON.`);
+    return kosong("error");
   }
-  if (!fundamentals) return kosong;
+  if (!fundamentals) return kosong("empty");
 
   const metrics: PluangMetric[] = [];
 
@@ -209,5 +233,10 @@ export async function fetchPluangFundamentals(ticker: string): Promise<PluangRes
 
   const reportedLabel = fundamentals.earnings?.lastUpdated ?? null;
 
-  return { metrics, reportedLabel, reportedAt: parseReportedAt(reportedLabel) };
+  return {
+    metrics,
+    reportedLabel,
+    reportedAt: parseReportedAt(reportedLabel),
+    status: metrics.length > 0 ? "ok" : "empty",
+  };
 }

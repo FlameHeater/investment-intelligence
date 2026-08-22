@@ -46,10 +46,14 @@ interface FetchOptions {
   headers?: Record<string, string>;
 }
 
-export async function fetchJson<T>(url: string, opts: FetchOptions): Promise<T> {
+async function fetchWithRetry(
+  url: string,
+  opts: FetchOptions,
+  parse: (res: Response) => Promise<unknown>,
+): Promise<unknown> {
   const { provider, limiter, retries = 2, timeoutMs = 15_000 } = opts;
 
-  const attempt = async (tryIndex: number): Promise<T> => {
+  const attempt = async (tryIndex: number): Promise<unknown> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -65,16 +69,21 @@ export async function fetchJson<T>(url: string, opts: FetchOptions): Promise<T> 
         cache: "no-store",
       });
 
-      if (res.status === 429 || res.status >= 500) {
+      // 403/429 sengaja dibedakan dari kegagalan lain di pemanggil lewat
+      // ProviderError.status — itu tanda diblokir/rate-limited, bukan sekadar
+      // data tidak ada, dan penting untuk didiagnosis terpisah.
+      if (res.status === 429 || res.status === 403 || res.status >= 500) {
         throw new ProviderError(`HTTP ${res.status} dari ${provider}`, provider, res.status);
       }
       if (!res.ok) {
         throw new ProviderError(`HTTP ${res.status} dari ${provider}`, provider, res.status);
       }
-      return (await res.json()) as T;
+      return await parse(res);
     } catch (err) {
       const retriable =
-        err instanceof ProviderError ? err.status === 429 || (err.status ?? 0) >= 500 : true;
+        err instanceof ProviderError
+          ? err.status === 429 || err.status === 403 || (err.status ?? 0) >= 500
+          : true;
       if (tryIndex < retries && retriable) {
         // backoff eksponensial: 1s, 2s, 4s
         await sleep(1000 * 2 ** tryIndex);
@@ -91,4 +100,15 @@ export async function fetchJson<T>(url: string, opts: FetchOptions): Promise<T> 
   };
 
   return limiter ? limiter.run(() => attempt(0)) : attempt(0);
+}
+
+export async function fetchJson<T>(url: string, opts: FetchOptions): Promise<T> {
+  return fetchWithRetry(url, opts, (res) => res.json()) as Promise<T>;
+}
+
+/** Sama seperti fetchJson, tapi untuk endpoint yang membalas HTML (mis. halaman
+ * publik yang di-scrape). Melempar ProviderError dengan status HTTP kalau gagal,
+ * supaya pemanggil bisa membedakan "diblokir/rate-limited" dari "kosong tapi valid". */
+export async function fetchText(url: string, opts: FetchOptions): Promise<string> {
+  return fetchWithRetry(url, opts, (res) => res.text()) as Promise<string>;
 }
