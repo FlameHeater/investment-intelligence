@@ -72,6 +72,9 @@ jobs:
       - name: Perbarui harga
         run: npm run job:market
 
+      - name: Perbarui profil emiten
+        run: npm run job:profile
+
       - name: Perbarui fundamental
         run: npm run job:fundamentals
 

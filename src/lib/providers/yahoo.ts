@@ -16,6 +16,8 @@ import type { Freshness } from "../types";
 
 const limiter = new RateLimiter(1200);
 const BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 export const YAHOO_SOURCE = "yahoo_finance_chart";
 export const YAHOO_FRESHNESS: Freshness = "delayed_15m";
@@ -113,5 +115,90 @@ export async function fetchChart(
     fiftyTwoWeekHigh: num(meta.fiftyTwoWeekHigh),
     fiftyTwoWeekLow: num(meta.fiftyTwoWeekLow),
     bars,
+  };
+}
+
+/**
+ * Profil bisnis (saham AS/IDX, emas) — endpoint quoteSummary, BEDA dari chart
+ * endpoint di atas: sejak 2024-an Yahoo mewajibkan pasangan cookie+crumb untuk
+ * endpoint ini, kalau tidak selalu menolak dengan "Invalid Crumb". Cookie dan
+ * crumb sama untuk semua simbol dalam satu proses job, jadi diambil sekali lalu
+ * dipakai ulang — bukan tiap panggilan.
+ */
+let crumbCache: { cookie: string; crumb: string } | null = null;
+
+async function getCrumb(): Promise<{ cookie: string; crumb: string } | null> {
+  if (crumbCache) return crumbCache;
+  try {
+    const cookieRes = await fetch("https://fc.yahoo.com", {
+      headers: { "User-Agent": UA },
+      redirect: "manual",
+    });
+    const setCookie = cookieRes.headers.get("set-cookie");
+    if (!setCookie) return null;
+    const cookie = setCookie.split(";")[0];
+
+    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+      headers: { "User-Agent": UA, Cookie: cookie },
+    });
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.includes("<")) return null;
+
+    crumbCache = { cookie, crumb };
+    return crumbCache;
+  } catch {
+    return null;
+  }
+}
+
+export interface YahooProfile {
+  description: string | null;
+  industry: string | null;
+  website: string | null;
+  country: string | null;
+  employees: number | null;
+}
+
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+const int = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null;
+
+export async function fetchProfile(symbol: string): Promise<YahooProfile | null> {
+  const auth = await getCrumb();
+  if (!auth) return null;
+
+  const url =
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}` +
+    `?modules=assetProfile&crumb=${encodeURIComponent(auth.crumb)}`;
+
+  let raw: {
+    quoteSummary?: {
+      result?: { assetProfile?: Record<string, unknown> }[] | null;
+      error?: { code?: string } | null;
+    };
+  };
+  try {
+    raw = await limiter.run(async () => {
+      const res = await fetch(url, { headers: { "User-Agent": UA, Cookie: auth.cookie } });
+      // Crumb bisa kedaluwarsa di tengah job (mis. proses berjalan lama lintas
+      // hari) — buang cache supaya panggilan berikutnya mengambil yang baru.
+      if (res.status === 401) crumbCache = null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
+  } catch {
+    return null;
+  }
+
+  const profile = raw.quoteSummary?.result?.[0]?.assetProfile;
+  if (!profile) return null;
+
+  return {
+    description: str(profile.longBusinessSummary),
+    industry: str(profile.industry) ?? str(profile.sector),
+    website: str(profile.website),
+    country: str(profile.country),
+    employees: int(profile.fullTimeEmployees),
   };
 }

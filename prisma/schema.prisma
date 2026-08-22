@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -31,9 +31,33 @@ model Asset {
   watchlistItems  WatchlistItem[]
   alerts          Alert[]
   alertEvents     AlertEvent[]
+  profile         AssetProfile?
 
   @@index([assetType])
   @@map("assets")
+}
+
+/// Profil bisnis emiten — supaya pengguna mengenali perusahaan/aset di balik
+/// ticker sebelum membeli, terpisah dari angka fundamental. Satu baris per
+/// aset (ditimpa, bukan time-series) karena profil bisnis jarang berubah.
+model AssetProfile {
+  id      String @id @default(cuid())
+  assetId String @unique @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  description String?
+  industry    String?
+  website     String?
+  country     String?
+  /// jumlah karyawan; hanya relevan untuk saham, null untuk kripto/emas
+  employees   Int?
+  /// khusus kripto: kategori dari CoinGecko, digabung dengan koma
+  categories  String?
+
+  source    String
+  fetchedAt DateTime @map("fetched_at")
+
+  @@map("asset_profiles")
 }
 
 /// Satu baris = satu bar OHLC (harian) atau snapshot harga terakhir.

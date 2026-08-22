@@ -1,9 +1,10 @@
 import { prisma } from "./db";
-import { fetchChart, YAHOO_FRESHNESS, YAHOO_SOURCE, type Bar } from "./providers/yahoo";
+import { fetchChart, fetchProfile, YAHOO_FRESHNESS, YAHOO_SOURCE, type Bar } from "./providers/yahoo";
 import {
   COINGECKO_FRESHNESS,
   COINGECKO_SOURCE,
   fetchCoinHistory,
+  fetchCoinProfile,
   fetchTopCoins,
 } from "./providers/coingecko";
 import { fetchCompanyNews, fetchMetrics, finnhubEnabled, FINNHUB_SOURCE } from "./providers/finnhub";
@@ -316,6 +317,95 @@ export async function refreshFundamentals(options: RefreshOptions = {}): Promise
     ok,
     failed,
     message: `${ok} emiten punya fundamental terbaru (${usAssets.length} saham AS, ${idxAssets.length} saham IDX diperiksa). ${failed} tidak mengembalikan metrik apa pun.${blockedNote}`,
+  };
+}
+
+/**
+ * Profil bisnis emiten (deskripsi, industri, website) — supaya pengguna
+ * mengenali perusahaan/aset di balik ticker sebelum membeli, terpisah dari
+ * angka fundamental.
+ *
+ * Beda dari job lain di file ini: profil bisnis jarang berubah, jadi job ini
+ * SENGAJA melewati aset yang sudah punya profil tersimpan alih-alih menarik
+ * ulang tiap kali dipanggil. Aman dimasukkan ke job:all / refresh terjadwal —
+ * setelah backfill awal, panggilan berikutnya nyaris tidak melakukan apa-apa
+ * kecuali ada aset baru dari seed universe.
+ */
+export async function refreshProfiles(options: RefreshOptions = {}): Promise<JobOutcome> {
+  const wanted = (assetType: string) =>
+    !options.only?.length || options.only.some((s) => TYPE_BY_SCOPE[s] === assetType);
+
+  const missing = await prisma.asset.findMany({
+    where: {
+      assetType: { in: (["us_stock", "idx_stock", "gold", "crypto"] as const).filter(wanted) },
+      profile: null,
+    },
+    orderBy: { ticker: "asc" },
+  });
+
+  let ok = 0;
+  let failed = 0;
+  let blocked = 0;
+  let done = 0;
+  const now = new Date();
+
+  for (const asset of missing) {
+    const isCrypto = asset.assetType === "crypto";
+    const profile = isCrypto
+      ? await fetchCoinProfile(asset.providerSymbol ?? "")
+      : await fetchProfile(asset.providerSymbol ?? asset.ticker);
+
+    if (!profile || (!profile.description && !("website" in profile && profile.website))) {
+      failed++;
+      if (profile && "status" in profile && profile.status === "blocked") blocked++;
+    } else {
+      await prisma.assetProfile.upsert({
+        where: { assetId: asset.id },
+        create: {
+          assetId: asset.id,
+          description: profile.description,
+          website: profile.website,
+          fetchedAt: now,
+          source: isCrypto ? COINGECKO_SOURCE : YAHOO_SOURCE,
+          industry: "industry" in profile ? profile.industry : null,
+          country: "country" in profile ? profile.country : null,
+          employees: "employees" in profile ? profile.employees : null,
+          categories: "categories" in profile ? profile.categories : null,
+        },
+        update: {
+          description: profile.description,
+          website: profile.website,
+          fetchedAt: now,
+          source: isCrypto ? COINGECKO_SOURCE : YAHOO_SOURCE,
+          industry: "industry" in profile ? profile.industry : null,
+          country: "country" in profile ? profile.country : null,
+          employees: "employees" in profile ? profile.employees : null,
+          categories: "categories" in profile ? profile.categories : null,
+        },
+      });
+      ok++;
+    }
+
+    done++;
+    options.onProgress?.(done, missing.length, `Profil ${asset.ticker}`);
+  }
+
+  // blocked > 0 berarti bukan celah data — CoinGecko rate-limit tier gratis
+  // tanpa key cukup ketat (~10-15/menit) dan mudah terlampaui saat backfill
+  // ratusan coin berturut-turut. Job ini idempoten: jalankan lagi nanti untuk
+  // melanjutkan dari yang terlewat, bukan tanda ada yang perlu diperbaiki.
+  const blockedNote =
+    blocked > 0
+      ? ` ${blocked} kripto diblokir/rate-limited oleh CoinGecko — jalankan job:profile lagi untuk melanjutkan (aset yang sudah berhasil dilewati).`
+      : "";
+
+  return {
+    ok,
+    failed,
+    message:
+      missing.length === 0
+        ? "Semua aset sudah punya profil tersimpan — tidak ada yang perlu ditarik."
+        : `${ok} dari ${missing.length} aset yang belum punya profil berhasil diisi. ${failed} tidak mengembalikan deskripsi.${blockedNote}`,
   };
 }
 

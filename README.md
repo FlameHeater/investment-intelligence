@@ -47,7 +47,7 @@ Kebanyakan dashboard investasi menyembunyikan ketidaktahuannya. Kalau sebuah ang
 - **Unified Dashboard** — ringkasan empat pasar, top movers, perubahan watchlist, dan status pipeline data.
 - **Advanced Screener** — filter atas metrik yang benar-benar punya data, dengan laporan berapa aset tersaring karena data kosong.
 - **AI Screener** — bahasa natural → filter terstruktur → dijalankan mesin screener yang **sama**, lalu diringkas. Filter hasil terjemahan disalin ke panel manual supaya bisa Anda periksa dan koreksi.
-- **Halaman Aset** — chart harga, fundamental, indikator teknikal, berita berlabel sumber, Investment Score dengan breakdown yang bisa dibuka, dan AI Reasoning (faktor pendukung, faktor bertentangan, celah data, skenario bull/base/bear).
+- **Halaman Aset** — profil emiten (deskripsi bisnis, industri, website), chart harga, fundamental, indikator teknikal, berita berlabel sumber, Investment Score dengan breakdown yang bisa dibuka, dan AI Reasoning (faktor pendukung, faktor bertentangan, celah data, skenario bull/base/bear).
 - **Smart Watchlist** — mendeteksi *perubahan* (pergeseran skor ≥5 poin, harga ≥5% sehari, berita resmi baru), bukan sekadar notifikasi harga; Claude menjelaskan penyebabnya dari data sebelum-sesudah.
 - **Alert harga** dengan riwayat kejadian.
 - **Contextual Education** — tooltip istilah di seluruh aplikasi (definisi lokal instan, penjelasan mendalam on-demand) + Learning Center berbasis markdown + glosarium metrik.
@@ -122,6 +122,7 @@ Setiap fitur yang keynya kosong akan **mati dengan pesan yang jelas**, bukan men
 | `npm run seed:universe` | Isi ulang daftar aset (kripto ditarik dari CoinGecko top-100) |
 | `npm run job:market` | Perbarui harga. Flag: `--only=us,idx,crypto,gold`, `--full` (riwayat 2 tahun) |
 | `npm run job:fundamentals` | Perbarui fundamental saham AS (butuh Finnhub) |
+| `npm run job:profile` | Isi profil bisnis emiten (deskripsi, industri, website). Hanya menarik aset yang belum punya profil — aman dijalankan berulang |
 | `npm run job:news` | Perbarui berita |
 | `npm run job:score` | Hitung ulang skor. Flag: `--all-modes` |
 | `npm run job:watchlist` | Deteksi perubahan pada watchlist + penjelasan AI |

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ExternalLink, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Building2, ExternalLink, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { buildSnapshot, findAssetByTicker } from "@/lib/assetService";
 import { getActiveMode } from "@/lib/settings";
@@ -179,6 +179,73 @@ export default async function AssetPage({ params }: { params: Promise<{ ticker: 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Chart + fundamental */}
         <div className="space-y-4 lg:col-span-2">
+          <Card>
+            <SectionTitle
+              title="Profil Emiten"
+              subtitle={
+                snapshot.profile
+                  ? `Sumber: ${snapshot.profile.source}`
+                  : "Belum ada profil tersimpan"
+              }
+            />
+
+            {!snapshot.profile ? (
+              <p className="rounded border border-dashed border-line-strong p-4 text-sm text-fg-muted">
+                Belum ada profil bisnis tersimpan untuk {asset.ticker}. Jalankan{" "}
+                <code className="font-mono text-xs">npm run job:profile</code> untuk mengisinya
+                (gratis, tanpa API key — sumbernya Yahoo Finance untuk saham/emas, CoinGecko untuk
+                kripto).
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {snapshot.profile.description ? (
+                  <p className="text-sm leading-relaxed text-fg-muted">
+                    {snapshot.profile.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-fg-subtle">
+                    Deskripsi bisnis tidak tersedia dari sumber, hanya data ringkas di bawah.
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+                  {snapshot.profile.industry && (
+                    <span className="flex items-center gap-1 rounded border border-line px-2 py-1">
+                      <Building2 size={12} aria-hidden="true" />
+                      {snapshot.profile.industry}
+                    </span>
+                  )}
+                  {snapshot.profile.categories && (
+                    <span className="rounded border border-line px-2 py-1">
+                      {snapshot.profile.categories}
+                    </span>
+                  )}
+                  {snapshot.profile.country && (
+                    <span className="rounded border border-line px-2 py-1">
+                      {snapshot.profile.country}
+                    </span>
+                  )}
+                  {snapshot.profile.employees !== null && (
+                    <span className="rounded border border-line px-2 py-1">
+                      {snapshot.profile.employees.toLocaleString("id-ID")} karyawan
+                    </span>
+                  )}
+                  {snapshot.profile.website && (
+                    <a
+                      href={snapshot.profile.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 rounded border border-line px-2 py-1 text-info hover:underline"
+                    >
+                      Situs resmi
+                      <ExternalLink size={11} aria-hidden="true" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+
           <Card>
             <SectionTitle
               title="Pergerakan harga"

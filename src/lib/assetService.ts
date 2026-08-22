@@ -22,6 +22,17 @@ export interface AssetRow {
   providerSymbol: string | null;
 }
 
+export interface AssetProfileInfo {
+  description: string | null;
+  industry: string | null;
+  website: string | null;
+  country: string | null;
+  employees: number | null;
+  categories: string | null;
+  source: string;
+  fetchedAt: Date;
+}
+
 export interface AssetSnapshot extends AssetRow {
   technical: TechnicalSnapshot;
   fundamentals: Map<string, number>;
@@ -33,6 +44,7 @@ export interface AssetSnapshot extends AssetRow {
   freshness: Freshness | null;
   /** true kalau data harga lebih tua dari 48 jam (PRD §7 poin 5) */
   stale: boolean;
+  profile: AssetProfileInfo | null;
 }
 
 const HISTORY_BARS = 400;
@@ -58,7 +70,7 @@ export async function loadCandles(assetId: string, limit = HISTORY_BARS): Promis
 }
 
 export async function buildSnapshot(asset: AssetRow): Promise<AssetSnapshot> {
-  const [candles, fundamentalRows, latest, newsCount7d] = await Promise.all([
+  const [candles, fundamentalRows, latest, newsCount7d, profile] = await Promise.all([
     loadCandles(asset.id),
     prisma.fundamentalData.findMany({
       where: { assetId: asset.id },
@@ -72,6 +84,7 @@ export async function buildSnapshot(asset: AssetRow): Promise<AssetSnapshot> {
     prisma.news.count({
       where: { assetId: asset.id, publishedAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
     }),
+    prisma.assetProfile.findUnique({ where: { assetId: asset.id } }),
   ]);
 
   // Satu metrik bisa punya beberapa periode; ambil yang paling baru di-fetch.
@@ -97,6 +110,7 @@ export async function buildSnapshot(asset: AssetRow): Promise<AssetSnapshot> {
     source: latest?.source ?? null,
     freshness: (latest?.freshness as Freshness) ?? null,
     stale: priceAgeHours !== null && priceAgeHours > 48,
+    profile,
   };
 }
 

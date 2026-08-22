@@ -1,4 +1,4 @@
-import { fetchJson, RateLimiter } from "./http";
+import { fetchJson, ProviderError, RateLimiter } from "./http";
 import type { Freshness } from "../types";
 import type { Bar } from "./yahoo";
 
@@ -111,4 +111,54 @@ export async function fetchCoinHistory(coinId: string, days = 365): Promise<Bar[
     close: price,
     volume: volumeByTs.get(ts) ?? null,
   }));
+}
+
+export interface CoinProfile {
+  description: string | null;
+  website: string | null;
+  categories: string | null;
+  /** 'ok' kalau fetch berhasil (isinya sendiri bisa saja kosong dari CoinGecko). */
+  status: "ok" | "blocked" | "error";
+}
+
+interface RawCoin {
+  description?: { en?: string };
+  links?: { homepage?: string[] };
+  categories?: (string | null)[];
+}
+
+// Jeda lebih longgar dari limiter harga/riwayat di atas. Endpoint /coins/{id}
+// dipanggil ratusan kali berturut-turut saat backfill profil (beda dari harga,
+// yang sekali panggil sudah mencakup 250 coin lewat /coins/markets), dan tier
+// gratis tanpa key sering memblokir sebelum batas resmi ~10-15/menit tercapai.
+const profileLimiter = new RateLimiter(hasKey() ? 2200 : 9000);
+
+/** Deskripsi & kategori coin — dipanggil sekali per aset (bukan per refresh), profil jarang berubah. */
+export async function fetchCoinProfile(coinId: string): Promise<CoinProfile | null> {
+  const url =
+    `${BASE}/coins/${encodeURIComponent(coinId)}` +
+    `?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`;
+
+  let raw: RawCoin;
+  try {
+    raw = await fetchJson<RawCoin>(url, {
+      provider: "coingecko",
+      limiter: profileLimiter,
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    const blocked = err instanceof ProviderError && (err.status === 429 || err.status === 403);
+    console.warn(
+      `[coingecko] ${coinId}: gagal diambil setelah retry (${
+        err instanceof Error ? err.message : String(err)
+      })`,
+    );
+    return { description: null, website: null, categories: null, status: blocked ? "blocked" : "error" };
+  }
+
+  const description = raw.description?.en?.trim() || null;
+  const website = raw.links?.homepage?.find((u) => u) || null;
+  const categories = (raw.categories ?? []).filter((c): c is string => Boolean(c)).join(", ") || null;
+
+  return { description, website, categories, status: "ok" };
 }
