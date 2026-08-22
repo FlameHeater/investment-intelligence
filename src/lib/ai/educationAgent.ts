@@ -1,4 +1,4 @@
-import { askClaude, GROUNDING_RULES } from "./client";
+import { askAi, GROUNDING_RULES } from "./client";
 import { GLOSSARY } from "../metrics";
 
 /**
@@ -50,7 +50,7 @@ export async function explain(req: ExplainRequest): Promise<string> {
         baseline ? `\n\nDefinisi singkat yang sudah ada di aplikasi: ${baseline}` : ""
       }${contextBlock}`;
 
-  return askClaude({ system: SYSTEM, user, maxTokens: 700, temperature: 0.3 });
+  return askAi({ system: SYSTEM, user, maxTokens: 700, temperature: 0.3 });
 }
 
 /**
@@ -83,7 +83,7 @@ export async function explainChange(payload: {
           .map((n) => `- [${n.publishedAt.toISOString().slice(0, 10)}] "${n.title}" — ${n.source}`)
           .join("\n");
 
-  return askClaude({
+  return askAi({
     system: CHANGE_SYSTEM,
     maxTokens: 500,
     user: `

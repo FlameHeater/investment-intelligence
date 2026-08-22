@@ -52,7 +52,7 @@ export function AskAnything({ aiAvailable }: { aiAvailable: boolean }) {
           placeholder={
             aiAvailable
               ? "mis. apa itu debt to equity dan berapa yang wajar?"
-              : "Butuh ANTHROPIC_API_KEY di .env"
+              : "Butuh ANTHROPIC_API_KEY atau GEMINI_API_KEY di .env"
           }
           className="h-11 flex-1 rounded border border-line bg-bg px-3 text-base outline-none transition-colors focus:border-info disabled:opacity-50"
         />

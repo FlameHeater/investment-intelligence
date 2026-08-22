@@ -9,7 +9,7 @@ import { getActiveMode } from "@/lib/settings";
 /**
  * POST /api/assets/:ticker/score/refresh
  *
- * Menghitung ulang skor deterministik, lalu (kalau ANTHROPIC_API_KEY ada)
+ * Menghitung ulang skor deterministik, lalu (kalau ANTHROPIC_API_KEY/GEMINI_API_KEY ada)
  * meminta AI Reasoning. Dua tahap ini sengaja dipisah statusnya di respons:
  * skor bisa berhasil sementara reasoning gagal, dan pengguna berhak tahu
  * yang mana yang berhasil.
@@ -57,7 +57,7 @@ export async function POST(
     }
   } else if (!aiEnabled()) {
     reasoningError =
-      "ANTHROPIC_API_KEY belum diisi, jadi AI Reasoning tidak dibuat. Skor deterministik di bawah tetap valid dan dihitung penuh.";
+      "ANTHROPIC_API_KEY/GEMINI_API_KEY belum diisi, jadi AI Reasoning tidak dibuat. Skor deterministik di bawah tetap valid dan dihitung penuh.";
   }
 
   const saved = await prisma.analysisScore.create({

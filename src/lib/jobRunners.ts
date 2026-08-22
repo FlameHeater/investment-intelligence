@@ -428,6 +428,6 @@ export async function runWatchlistDetection(): Promise<JobOutcome> {
     message:
       events.length === 0
         ? `Tidak ada perubahan signifikan pada ${watchlist.length} aset di watchlist.`
-        : `${ok} kejadian tercatat, ${explained} di antaranya dijelaskan oleh Claude.${aiEnabled() ? "" : " (ANTHROPIC_API_KEY kosong — penjelasan AI dilewati.)"}`,
+        : `${ok} kejadian tercatat, ${explained} di antaranya dijelaskan oleh AI.${aiEnabled() ? "" : " (ANTHROPIC_API_KEY/GEMINI_API_KEY kosong — penjelasan AI dilewati.)"}`,
   };
 }

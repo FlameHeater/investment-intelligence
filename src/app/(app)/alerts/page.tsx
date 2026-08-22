@@ -47,7 +47,7 @@ export default async function AlertsPage() {
             {!aiEnabled() && (
               <span className="text-warn">
                 {" "}
-                ANTHROPIC_API_KEY belum diisi, jadi kejadian tercatat tanpa penjelasan AI.
+                ANTHROPIC_API_KEY/GEMINI_API_KEY belum diisi, jadi kejadian tercatat tanpa penjelasan AI.
               </span>
             )}
           </p>

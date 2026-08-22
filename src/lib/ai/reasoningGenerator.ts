@@ -1,4 +1,4 @@
-import { askClaude, DEFAULT_MODEL, extractJson, GROUNDING_RULES } from "./client";
+import { askAi, currentModel, extractJson, GROUNDING_RULES } from "./client";
 import { MODES } from "../modes";
 import type { AiReasoning } from "../types";
 import type { ScoreResult } from "../scoring/orchestrator";
@@ -141,7 +141,7 @@ export async function generateReasoning(
   news: NewsInput[],
 ): Promise<AiReasoning> {
   const prompt = buildReasoningPrompt(snapshot, score, news.slice(0, 5));
-  const text = await askClaude({ system: SYSTEM, user: prompt, maxTokens: 2000 });
+  const text = await askAi({ system: SYSTEM, user: prompt, maxTokens: 2000 });
 
   const parsed = extractJson<Omit<AiReasoning, "generatedAt" | "model">>(text);
   if (!parsed?.summary) {
@@ -159,6 +159,6 @@ export async function generateReasoning(
       bear: parsed.scenarios?.bear ?? "tidak tersedia",
     },
     generatedAt: new Date().toISOString(),
-    model: DEFAULT_MODEL,
+    model: currentModel(),
   };
 }

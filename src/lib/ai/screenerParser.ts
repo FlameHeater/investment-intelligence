@@ -1,4 +1,4 @@
-import { askClaude, extractJson, GROUNDING_RULES } from "./client";
+import { askAi, extractJson, GROUNDING_RULES } from "./client";
 import { METRICS } from "../metrics";
 import { screenerQuerySchema, type ScreenerQuery, type ScreenerResult } from "../screener";
 
@@ -52,7 +52,7 @@ export interface ParsedScreenerQuery {
 }
 
 export async function parseNaturalQuery(input: string): Promise<ParsedScreenerQuery> {
-  const text = await askClaude({
+  const text = await askAi({
     system: SYSTEM,
     user: `Permintaan pengguna: "${input}"`,
     maxTokens: 1200,
@@ -120,7 +120,7 @@ export async function summarizeScreenerResult(
           )
           .join("\n");
 
-  return askClaude({
+  return askAi({
     system: SUMMARY_SYSTEM,
     maxTokens: 800,
     user: `

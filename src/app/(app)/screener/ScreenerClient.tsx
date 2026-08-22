@@ -209,7 +209,8 @@ export function ScreenerClient({
             <div className="flex gap-2 text-sm">
               <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
               <p className="text-fg-muted">
-                AI Screener butuh <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> di
+                AI Screener butuh <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> atau{" "}
+                <code className="font-mono text-xs">GEMINI_API_KEY</code> di
                 berkas <code className="font-mono text-xs">.env</code>. Advanced Screener manual
                 tetap berfungsi penuh tanpa itu — ia memakai mesin filter yang sama.
               </p>

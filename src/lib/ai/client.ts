@@ -1,32 +1,56 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 
 /**
- * Satu pintu untuk semua panggilan Claude.
+ * Satu pintu untuk semua panggilan AI reasoning.
  *
  * Prinsip PRD §6.1 & §14: model hanya menerima data yang SUDAH diambil dari
  * database. Tidak ada tool, tidak ada web access, tidak ada perintah "cari tahu
  * sendiri". Kalau sebuah angka tidak ada di prompt, model tidak boleh
  * menyebutkannya — dan itu dinyatakan eksplisit di system prompt tiap pemanggil.
+ *
+ * Dua provider didukung, dipilih otomatis lewat env yang diisi:
+ *   - Anthropic (ANTHROPIC_API_KEY) — berbayar, diprioritaskan kalau diisi.
+ *   - Gemini (GEMINI_API_KEY) — tier gratis Google, dipakai kalau Anthropic
+ *     tidak dikonfigurasi. Cukup untuk pemakaian single-user (lihat README).
+ * Aturan grounding di bawah berlaku sama untuk keduanya — kualitas jawaban
+ * bergantung pada prompt, bukan provider mana yang aktif.
  */
 
 export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-export const aiEnabled = () => Boolean(process.env.ANTHROPIC_API_KEY);
+export type AiProvider = "anthropic" | "gemini";
 
-let client: Anthropic | null = null;
+/** Anthropic diprioritaskan kalau kuncinya diisi; Gemini adalah fallback gratis. */
+export function activeProvider(): AiProvider | null {
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  if (process.env.GEMINI_API_KEY) return "gemini";
+  return null;
+}
 
-function getClient(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new AiDisabledError();
-  }
-  client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
+export const aiEnabled = () => activeProvider() !== null;
+
+/** Model yang benar-benar sedang aktif, untuk ditampilkan ke pengguna (mis. field `model` pada AiReasoning). */
+export const currentModel = () => (activeProvider() === "gemini" ? GEMINI_MODEL : DEFAULT_MODEL);
+
+let anthropicClient: Anthropic | null = null;
+let geminiClient: GoogleGenAI | null = null;
+
+function getAnthropicClient(): Anthropic {
+  anthropicClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return anthropicClient;
+}
+
+function getGeminiClient(): GoogleGenAI {
+  geminiClient ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  return geminiClient;
 }
 
 export class AiDisabledError extends Error {
   constructor() {
     super(
-      "Fitur AI tidak aktif karena ANTHROPIC_API_KEY belum diisi. Semua skor deterministik tetap berjalan tanpa ini.",
+      "Fitur AI tidak aktif — isi ANTHROPIC_API_KEY (berbayar) atau GEMINI_API_KEY (gratis) untuk mengaktifkannya. Semua skor deterministik tetap berjalan tanpa ini.",
     );
     this.name = "AiDisabledError";
   }
@@ -39,8 +63,8 @@ export interface AskOptions {
   temperature?: number;
 }
 
-export async function askClaude(opts: AskOptions): Promise<string> {
-  const response = await getClient().messages.create({
+async function askAnthropic(opts: AskOptions): Promise<string> {
+  const response = await getAnthropicClient().messages.create({
     model: DEFAULT_MODEL,
     max_tokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.2,
@@ -53,6 +77,26 @@ export async function askClaude(opts: AskOptions): Promise<string> {
     .map((b) => b.text)
     .join("\n")
     .trim();
+}
+
+async function askGemini(opts: AskOptions): Promise<string> {
+  const response = await getGeminiClient().models.generateContent({
+    model: GEMINI_MODEL,
+    contents: opts.user,
+    config: {
+      systemInstruction: opts.system,
+      maxOutputTokens: opts.maxTokens ?? 2000,
+      temperature: opts.temperature ?? 0.2,
+    },
+  });
+
+  return (response.text ?? "").trim();
+}
+
+export async function askAi(opts: AskOptions): Promise<string> {
+  const provider = activeProvider();
+  if (!provider) throw new AiDisabledError();
+  return provider === "gemini" ? askGemini(opts) : askAnthropic(opts);
 }
 
 /**

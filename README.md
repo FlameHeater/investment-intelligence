@@ -98,8 +98,10 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `APP_PASSWORD` | **Ya** | Password gerbang single-user |
 | `SESSION_SECRET` | **Ya** | Kunci penanda tangan cookie sesi (min. 16 karakter, disarankan 32+) |
 | `DATABASE_URL` | Ya (ada default) | `file:./dev.db` untuk SQLite |
-| `ANTHROPIC_API_KEY` | Tidak | Mengaktifkan AI Reasoning, AI Screener, dan penjelasan istilah |
+| `ANTHROPIC_API_KEY` | Tidak | Mengaktifkan AI Reasoning, AI Screener, dan penjelasan istilah (Anthropic, berbayar, diprioritaskan kalau diisi) |
 | `ANTHROPIC_MODEL` | Tidak | Default `claude-sonnet-5` |
+| `GEMINI_API_KEY` | Tidak | Fallback gratis untuk fitur AI yang sama kalau `ANTHROPIC_API_KEY` kosong (tier gratis Google) |
+| `GEMINI_MODEL` | Tidak | Default `gemini-2.5-flash` |
 | `FINNHUB_API_KEY` | Tidak | Fundamental & berita saham AS (gratis, 60 calls/menit) |
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |
@@ -266,7 +268,7 @@ Detail implementasi: [`src/lib/scoring/`](src/lib/scoring/).
 
 Semua system prompt memakai blok aturan bersama `GROUNDING_RULES` di [`src/lib/ai/client.ts`](src/lib/ai/client.ts) — terbuka untuk dibaca dan diubah.
 
-Tanpa `ANTHROPIC_API_KEY`, ketiga fitur ini mati dengan pesan jelas dan sisanya berjalan penuh.
+Tanpa `ANTHROPIC_API_KEY` maupun `GEMINI_API_KEY`, ketiga fitur ini mati dengan pesan jelas dan sisanya berjalan penuh. Kalau hanya `GEMINI_API_KEY` yang diisi, ketiganya tetap berjalan lewat tier gratis Gemini — aturan `GROUNDING_RULES` yang sama berlaku untuk kedua provider, jadi disiplin anti-halusinasinya tidak bergantung pada model mana yang aktif.
 
 ---
 

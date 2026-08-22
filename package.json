@@ -24,8 +24,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
+    "@google/genai": "^2.18.0",
     "@prisma/client": "^6.16.2",
     "clsx": "^2.1.1",
+    "dotenv": "^17.2.2",
     "gray-matter": "^4.0.3",
     "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.544.0",
@@ -34,8 +36,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
-    "zod": "^4.1.11",
-    "dotenv": "^17.2.2"
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",

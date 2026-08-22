@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "AI Screener butuh ANTHROPIC_API_KEY. Advanced Screener manual tetap bisa dipakai tanpa itu.",
+          "AI Screener butuh ANTHROPIC_API_KEY atau GEMINI_API_KEY. Advanced Screener manual tetap bisa dipakai tanpa itu.",
       },
       { status: 503 },
     );
