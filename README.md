@@ -101,7 +101,7 @@ Buka http://localhost:3000 dan masuk dengan `APP_PASSWORD` Anda.
 | `ANTHROPIC_API_KEY` | Tidak | Mengaktifkan AI Reasoning, AI Screener, dan penjelasan istilah (Anthropic, berbayar, diprioritaskan kalau diisi) |
 | `ANTHROPIC_MODEL` | Tidak | Default `claude-sonnet-5` |
 | `GEMINI_API_KEY` | Tidak | Fallback gratis untuk fitur AI yang sama kalau `ANTHROPIC_API_KEY` kosong (tier gratis Google) |
-| `GEMINI_MODEL` | Tidak | Default `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Tidak | Default `gemini-3.6-flash` |
 | `FINNHUB_API_KEY` | Tidak | Fundamental & berita saham AS (gratis, 60 calls/menit) |
 | `COINGECKO_API_KEY` | Tidak | Menaikkan limit CoinGecko dari ~10 ke 30 calls/menit |
 | `ALPHAVANTAGE_API_KEY` | Tidak | Cadangan fundamental saham AS |

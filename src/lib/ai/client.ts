@@ -18,7 +18,7 @@ import { GoogleGenAI } from "@google/genai";
  */
 
 export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 export type AiProvider = "anthropic" | "gemini";
 
